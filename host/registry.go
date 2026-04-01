@@ -2,40 +2,45 @@ package host
 
 import (
 	"context"
-	"sync"
+	"errors"
 	"time"
+
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 type Registry struct {
 	events chan Event
 
-	provider    Provider
+	providers   []Provider
 	connChecker ConnectionChecker
 	hosts       map[Host]info
 
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	cancel   context.CancelFunc
+	errGroup *errgroup.Group
+
+	logger *zap.Logger
 }
 
-func NewRegistry() *Registry {
+func NewRegistry(logger *zap.Logger) *Registry {
 	return &Registry{
 		events: make(chan Event),
 		hosts:  make(map[Host]info),
+		logger: logger.Named("Registry"),
 	}
 }
 
 func (r *Registry) Start(ctx context.Context) error {
 	ctx, r.cancel = context.WithCancel(ctx)
+	r.errGroup, ctx = errgroup.WithContext(ctx)
 
-	r.wg.Go(func() {
-		// TODO(tzdybal): error handling
-		_ = r.eventLoop(ctx)
+	r.errGroup.Go(func() error {
+		return r.eventLoop(ctx)
 	})
 
-	if r.provider != nil {
-		// TODO(tzdybal): error handling
-		r.wg.Go(func() {
-			_ = r.provider.Start(ctx, r.events)
+	for _, provider := range r.providers {
+		r.errGroup.Go(func() error {
+			return provider.Start(ctx, r.events)
 		})
 	}
 
@@ -43,35 +48,47 @@ func (r *Registry) Start(ctx context.Context) error {
 }
 
 func (r *Registry) Close() error {
-	if r.provider != nil {
-		r.provider.Close()
-	}
 	r.cancel()
-	r.wg.Wait()
-	return nil
+	var err error
+	for _, provider := range r.providers {
+		err = errors.Join(err, provider.Close())
+	}
+	return errors.Join(err, r.errGroup.Wait())
 }
 
 func (r *Registry) eventLoop(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil
+			}
 			return ctx.Err()
 		case e := <-r.events:
-			r.handle(e)
+			err := r.handle(e)
+			if err != nil {
+				r.logger.Sugar().Debugw("error while handling event", "error", err)
+			}
 		}
 	}
 }
 
 func (r *Registry) handle(e Event) error {
+	r.logger.Sugar().Debugw("event received", "event", e)
 	switch e.Type {
 	case HostRegistered:
+		_, found := r.hosts[e.Host]
+		if found {
+			r.logger.Sugar().Infow("host already registered", "address", e.Host)
+			return nil
+		}
 		r.hosts[e.Host] = info{}
 	case HostDeregistered:
 		delete(r.hosts, e.Host)
 	case HostOnline:
 	case HostOffline:
 	default:
-		// TODO(tzdybal): log
+		r.logger.Sugar().Errorw("unknown event type", "type", e.Type)
 	}
 	return nil
 }

@@ -4,14 +4,19 @@ import (
 	"bufio"
 	"context"
 	"os"
+
+	"go.uber.org/zap"
 )
 
 type Provider interface {
 	Start(ctx context.Context, updatesCH chan<- Event) error
 	Close() error
+
+	SetLogger(logger *zap.Logger)
 }
 
 type FileProvider struct {
+	logger   *zap.Logger
 	filename string
 }
 
@@ -23,40 +28,40 @@ func NewFileProvider(filename string) *FileProvider {
 	}
 }
 
-func (d *FileProvider) Start(ctx context.Context, updatesCH chan<- Event) error {
-	f, err := os.Open(d.filename)
+func (p *FileProvider) Start(ctx context.Context, updatesCH chan<- Event) error {
+	f, err := os.Open(p.filename)
 	if err != nil {
 		return err
 	}
 	defer func() {
 		err := f.Close()
 		if err != nil {
-			// TODO(tzdybal): log error
+			p.logger.Sugar().Infow("failed to close file", "path", p.filename, "error", err)
 		}
 	}()
 	sc := bufio.NewScanner(f)
 
 	for sc.Scan() {
-		updatesCH <- Event{
+		host := sc.Text()
+		p.logger.Sugar().Debugw("host found", "address", host)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+
+		case updatesCH <- Event{
 			Type: HostRegistered,
-			Host: Host(sc.Text()),
+			Host: Host(host),
+		}:
 		}
 	}
 
 	return nil
 }
-func (d *FileProvider) Close() error {
+
+func (p *FileProvider) Close() error {
 	return nil
 }
 
-type ShinzohubProvider struct {
-}
-
-var _ Provider = &ShinzohubProvider{}
-
-func (d *ShinzohubProvider) Start(ctx context.Context, updatesCH chan<- Event) error {
-	panic("not implemented") // TODO: Implement
-}
-func (d *ShinzohubProvider) Close() error {
-	panic("not implemented") // TODO: Implement
+func (p *FileProvider) SetLogger(logger *zap.Logger) {
+	p.logger = logger.Named("file-provider")
 }
