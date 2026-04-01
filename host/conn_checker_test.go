@@ -24,6 +24,7 @@ func TestHttpConnectionChecker(t *testing.T) {
 	const delay = timeout + 10*time.Millisecond
 
 	okServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(timeout / 10)
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -73,6 +74,7 @@ func TestHttpConnectionChecker(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
 			cc := NewHttpConnectionChecker(timeout, logger)
 			status := cc.CheckConnection(c.ctx, Host(c.url))
 			if c.err {

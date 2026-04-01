@@ -22,11 +22,13 @@ type Registry struct {
 	logger *zap.Logger
 }
 
-func NewRegistry(logger *zap.Logger) *Registry {
+func NewRegistry(providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
 	return &Registry{
-		events: make(chan Event),
-		hosts:  make(map[Host]info),
-		logger: logger.Named("Registry"),
+		events:      make(chan Event),
+		hosts:       make(map[Host]info),
+		logger:      logger.Named("Registry"),
+		providers:   providers,
+		connChecker: connChecker,
 	}
 }
 

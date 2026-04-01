@@ -10,23 +10,24 @@ import (
 )
 
 func TestNewRegistry(t *testing.T) {
+	t.Parallel()
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
-	reg := NewRegistry(logger)
+	providers := make([]Provider, 10)
+	reg := NewRegistry(providers, nil, logger)
 	require.NotNil(t, reg)
 	require.NotNil(t, reg.events)
 	require.NotNil(t, reg.hosts)
+	require.NotEmpty(t, reg.providers)
 }
 
 func TestRegistryStartStop(t *testing.T) {
+	t.Parallel()
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 	defer func() {
 		_ = logger.Sync()
 	}()
-
-	reg := NewRegistry(logger)
-	require.NotNil(t, reg)
 
 	providers := []Provider{
 		NewMockProvider([]Host{"a.b.c", "127.0.0.1"}),
@@ -37,8 +38,8 @@ func TestRegistryStartStop(t *testing.T) {
 		provider.SetLogger(logger)
 	}
 
-	// TODO(tzdybal): add to constructor or something
-	reg.providers = append(reg.providers, providers...)
+	reg := NewRegistry(providers, nil, logger)
+	require.NotNil(t, reg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
