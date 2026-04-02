@@ -59,7 +59,7 @@ func TestHttpConnectionChecker(t *testing.T) {
 			err:  true,
 		},
 		{
-			name: "timeoout",
+			name: "timeout",
 			url:  slowServer.URL,
 			ctx:  context.Background(),
 			err:  true,
