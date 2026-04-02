@@ -10,11 +10,12 @@ import (
 )
 
 type Registry struct {
+	config config
 	events chan Event
 
 	providers   []Provider
 	connChecker ConnectionChecker
-	hosts       map[Host]info
+	hosts       map[Host]*info
 
 	cancel   context.CancelFunc
 	errGroup *errgroup.Group
@@ -22,10 +23,20 @@ type Registry struct {
 	logger *zap.Logger
 }
 
-func NewRegistry(providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
+// TODO(tzdybal): to be refactored
+type config struct {
+	connCheckInterval time.Duration
+}
+
+var defaultConfig config = config{
+	connCheckInterval: 5 * time.Second,
+}
+
+func NewRegistry(config config, providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
 	return &Registry{
+		config:      config,
 		events:      make(chan Event),
-		hosts:       make(map[Host]info),
+		hosts:       make(map[Host]*info),
 		logger:      logger.Named("Registry"),
 		providers:   providers,
 		connChecker: connChecker,
@@ -67,7 +78,7 @@ func (r *Registry) eventLoop(ctx context.Context) error {
 			}
 			return ctx.Err()
 		case e := <-r.events:
-			err := r.handle(e)
+			err := r.handle(ctx, e)
 			if err != nil {
 				r.logger.Sugar().Debugw("error while handling event", "error", err)
 			}
@@ -75,7 +86,7 @@ func (r *Registry) eventLoop(ctx context.Context) error {
 	}
 }
 
-func (r *Registry) handle(e Event) error {
+func (r *Registry) handle(ctx context.Context, e Event) error {
 	r.logger.Sugar().Debugw("event received", "event", e)
 	switch e.Type {
 	case HostRegistered:
@@ -84,15 +95,42 @@ func (r *Registry) handle(e Event) error {
 			r.logger.Sugar().Infow("host already registered", "address", e.Host)
 			return nil
 		}
-		r.hosts[e.Host] = info{}
+		r.hosts[e.Host] = &info{}
+		r.errGroup.Go(func() error {
+			return r.connCheckerWorker(ctx, e.Host)
+		})
 	case HostDeregistered:
+		// TODO(tzdybal): stop connection checker worker!
 		delete(r.hosts, e.Host)
 	case HostOnline:
+		r.hosts[e.Host].online = true
 	case HostOffline:
+		r.hosts[e.Host].online = false
 	default:
 		r.logger.Sugar().Errorw("unknown event type", "type", e.Type)
 	}
 	return nil
+}
+
+func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {
+	ticker := time.NewTicker(r.config.connCheckInterval)
+	for {
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil
+			}
+			return ctx.Err()
+		case <-ticker.C:
+			res := r.connChecker.CheckConnection(ctx, host)
+			t := HostOnline
+			if !res.Online {
+				t = HostOffline
+				// TODO(tzdybal): exponential backoff?
+			}
+			r.events <- Event{Type: t, Host: host}
+		}
+	}
 }
 
 type Event struct {
