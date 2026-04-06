@@ -60,13 +60,17 @@ func (r *Registry) Start(ctx context.Context) error {
 	return nil
 }
 
+func (r *Registry) Wait() error {
+	return r.errGroup.Wait()
+}
+
 func (r *Registry) Close() error {
 	r.cancel()
 	var err error
 	for _, provider := range r.providers {
 		err = errors.Join(err, provider.Close())
 	}
-	return errors.Join(err, r.errGroup.Wait())
+	return err
 }
 
 func (r *Registry) eventLoop(ctx context.Context) error {
