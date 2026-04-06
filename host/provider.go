@@ -29,6 +29,7 @@ func NewFileProvider(filename string) *FileProvider {
 }
 
 func (p *FileProvider) Start(ctx context.Context, updatesCH chan<- Event) error {
+	p.logger.Sugar().Debugw("opening host file", "path", p.filename)
 	f, err := os.Open(p.filename)
 	if err != nil {
 		return err
