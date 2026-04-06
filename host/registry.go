@@ -10,7 +10,7 @@ import (
 )
 
 type Registry struct {
-	config config
+	config Config
 	events chan Event
 
 	providers   []Provider
@@ -24,15 +24,15 @@ type Registry struct {
 }
 
 // TODO(tzdybal): to be refactored
-type config struct {
-	connCheckInterval time.Duration
+type Config struct {
+	ConnCheckInterval time.Duration
 }
 
-var defaultConfig config = config{
-	connCheckInterval: 5 * time.Second,
+var defaultConfig Config = Config{
+	ConnCheckInterval: 5 * time.Second,
 }
 
-func NewRegistry(config config, providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
+func NewRegistry(config Config, providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
 	return &Registry{
 		config:      config,
 		events:      make(chan Event),
@@ -113,7 +113,7 @@ func (r *Registry) handle(ctx context.Context, e Event) error {
 }
 
 func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {
-	ticker := time.NewTicker(r.config.connCheckInterval)
+	ticker := time.NewTicker(r.config.ConnCheckInterval)
 	for {
 		select {
 		case <-ctx.Done():
