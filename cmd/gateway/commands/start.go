@@ -17,13 +17,15 @@ const (
 	defaultInterval = 10 * time.Second
 )
 
-var startCommand = &cobra.Command{
-	Use:   "start",
-	Short: "starts the Shinzo Network Gateway",
-	RunE:  startGateway,
+func (a *App) newStartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "start",
+		Short: "starts the Shinzo Network Gateway",
+		RunE:  a.startGateway,
+	}
 }
 
-func startGateway(cmd *cobra.Command, args []string) error {
+func (a *App) startGateway(cmd *cobra.Command, args []string) error {
 	logger, err := zap.NewDevelopment()
 	defer func() {
 		_ = logger.Sync()
