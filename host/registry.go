@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// Registry tracks known hosts and their connectivity status.
 type Registry struct {
 	config Config
 	events chan Event
@@ -23,15 +24,12 @@ type Registry struct {
 	logger *zap.Logger
 }
 
-// TODO(tzdybal): to be refactored
+// Config holds configuration for the Registry.
 type Config struct {
 	ConnCheckInterval time.Duration
 }
 
-var defaultConfig Config = Config{
-	ConnCheckInterval: 5 * time.Second,
-}
-
+// NewRegistry creates a new Registry with the given configuration, host providers, and connection checker.
 func NewRegistry(config Config, providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
 	return &Registry{
 		config:      config,
@@ -43,6 +41,7 @@ func NewRegistry(config Config, providers []Provider, connChecker ConnectionChec
 	}
 }
 
+// Start launches all providers and begins processing host events.
 func (r *Registry) Start(ctx context.Context) error {
 	ctx, r.cancel = context.WithCancel(ctx)
 	r.errGroup, ctx = errgroup.WithContext(ctx)
@@ -60,10 +59,12 @@ func (r *Registry) Start(ctx context.Context) error {
 	return nil
 }
 
+// Wait blocks until all internal goroutines have stopped and returns the first non-nil error.
 func (r *Registry) Wait() error {
 	return r.errGroup.Wait()
 }
 
+// Close cancels the registry context and closes all providers.
 func (r *Registry) Close() error {
 	r.cancel()
 	var err error
@@ -137,22 +138,28 @@ func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {
 	}
 }
 
+// Event represents a host lifecycle or connectivity change.
 type Event struct {
 	Type EventType
 	Host Host
 }
 
+// Host is the address (e.g. URL) of a network host.
 type Host string
+
+// EventType identifies the kind of host event.
 type EventType int
 
+// Host event types.
 const (
-	HostRegistered EventType = iota
-	HostDeregistered
-	HostOnline
-	HostOffline
+	HostRegistered   EventType = iota // host was registered in Shinzo Network
+	HostDeregistered                  // host was deregistered from Shinzo Network
+	HostOnline                        // host is reachable
+	HostOffline                       // host is unreachable
 )
 
 type info struct {
-	online    bool
-	lastQuery time.Time
+	online bool
+	// TODO(tzdybal): gather and use more information about hosts
+	// lastQuery time.Time
 }

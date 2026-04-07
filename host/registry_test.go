@@ -9,6 +9,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const defaultInterval = 5 * time.Second
+
+var defaultConfig = Config{
+	ConnCheckInterval: defaultInterval,
+}
+
 func TestNewRegistry(t *testing.T) {
 	t.Parallel()
 	logger, err := zap.NewDevelopment()
