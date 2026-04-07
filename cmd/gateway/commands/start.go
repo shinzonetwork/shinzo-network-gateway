@@ -12,6 +12,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	defaultTimeout  = 5 * time.Second
+	defaultInterval = 10 * time.Second
+)
+
 var startCommand = &cobra.Command{
 	Use:   "start",
 	Short: "starts the Shinzo Network Gateway",
@@ -32,8 +37,8 @@ func startGateway(cmd *cobra.Command, args []string) error {
 	// TODO(tzdybal): config/env/flag for host file
 	provider := host.NewFileProvider("hosts.txt")
 	provider.SetLogger(logger)
-	connChecker := host.NewHTTPConnectionChecker(5*time.Second, logger)
-	registry := host.NewRegistry(host.Config{ConnCheckInterval: 5 * time.Second}, []host.Provider{provider}, connChecker, logger)
+	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
+	registry := host.NewRegistry(host.Config{ConnCheckInterval: defaultInterval}, []host.Provider{provider}, connChecker, logger)
 
 	err = registry.Start(cmd.Context())
 	if err != nil {
