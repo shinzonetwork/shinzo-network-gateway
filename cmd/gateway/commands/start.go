@@ -25,7 +25,7 @@ func (a *App) newStartCmd() *cobra.Command {
 	}
 }
 
-func (a *App) startGateway(cmd *cobra.Command, args []string) error {
+func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	logger, err := zap.NewDevelopment()
 	defer func() {
 		_ = logger.Sync()
