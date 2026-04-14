@@ -1,11 +1,13 @@
 package endpoint
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/goccy/go-json"
 	"go.uber.org/zap"
@@ -24,6 +26,8 @@ type Handler struct {
 	selector  HostsSelector
 	logger    *zap.Logger
 }
+
+var _ http.Handler = &Handler{}
 
 // graphQLRequest is the JSON body of a GraphQL-over-HTTP POST request per the GraphQL-over-HTTP spec.
 // Query is required; OperationName, Variables, and Extensions are optional.
@@ -46,8 +50,6 @@ type hostResponse struct {
 	response []byte
 	err      error
 }
-
-var _ http.Handler = &Handler{}
 
 // NewHandler creates new Handler instance.
 func NewHandler(extractor CollectionsExtractor, selector HostsSelector, logger *zap.Logger) *Handler {
@@ -110,7 +112,35 @@ func (h *Handler) getHostsReponses(ctx context.Context, hosts []host.Host, body 
 }
 
 func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) hostResponse {
-	panic("implement me!")
+	// TODO(tzdybal): extract timeout as config
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	url := string(host) + "/graphql"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return hostResponse{err: err}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", contentTypeGraphQLResponse)
+
+	// TODO(tzdybal): HTTP client per host, for more optimal resource usage
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return hostResponse{err: err}
+	}
+	defer func() {
+		err := resp.Body.Close()
+		if err != nil {
+			h.logger.Sugar().Errorw("failed to close response body", "error", err)
+		}
+	}()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return hostResponse{err: err}
+	}
+
+	return hostResponse{response: respBody}
 }
 
 func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostResponse) {
