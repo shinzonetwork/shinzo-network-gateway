@@ -8,15 +8,18 @@ import (
 	"github.com/spf13/viper"
 )
 
+// App is the main application struct holding configuration state.
 type App struct {
 	cfgFile string
 	v       *viper.Viper
 }
 
+// NewApp creates a new App instance.
 func NewApp() *App {
 	return &App{v: viper.New()}
 }
 
+// Execute runs the root command.
 func Execute() {
 	app := NewApp()
 	if err := app.newRootCmd().Execute(); err != nil {
@@ -32,7 +35,7 @@ func (a *App) newRootCmd() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVar(&a.cfgFile, "config", "", "config file (default is $HOME/.shinzo-network-gateway.yaml)")
-	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+	cmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
 		return a.initConfig()
 	}
 
