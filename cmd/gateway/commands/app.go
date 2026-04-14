@@ -1,0 +1,64 @@
+package commands
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+)
+
+type App struct {
+	cfgFile string
+	v       *viper.Viper
+}
+
+func NewApp() *App {
+	return &App{v: viper.New()}
+}
+
+func Execute() {
+	app := NewApp()
+	if err := app.newRootCmd().Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func (a *App) newRootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "gateway",
+		Short: "Shinzo Network Gateway",
+		Long:  `Shinzo Network Gateway is an entry point to Shinzo Network.`,
+	}
+
+	cmd.PersistentFlags().StringVar(&a.cfgFile, "config", "", "config file (default is $HOME/.shinzo-network-gateway.yaml)")
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		return a.initConfig()
+	}
+
+	cmd.AddCommand(a.newStartCmd())
+
+	return cmd
+}
+
+func (a *App) initConfig() error {
+	if a.cfgFile != "" {
+		a.v.SetConfigFile(a.cfgFile)
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("error finding home directory: %w", err)
+		}
+		a.v.AddConfigPath(home)
+		a.v.SetConfigType("yaml")
+		a.v.SetConfigName(".shinzo-network-gateway")
+	}
+
+	a.v.AutomaticEnv()
+
+	if err := a.v.ReadInConfig(); err == nil {
+		fmt.Fprintln(os.Stderr, "Using config file:", a.v.ConfigFileUsed())
+	}
+
+	return nil
+}
