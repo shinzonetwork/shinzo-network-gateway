@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -14,7 +15,7 @@ import (
 
 // HostsSelector interface allows handler to get hosts for given collections.
 type HostsSelector interface {
-	SelectHosts(collections []string) ([]host.Host, error)
+	SelectHosts(ctx context.Context, collections []string) ([]host.Host, error)
 }
 
 // Handler is a HTTP handler for "POST /graphql" endpoint.
@@ -84,23 +85,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hosts, err := h.selector.SelectHosts(collections)
+	hosts, err := h.selector.SelectHosts(r.Context(), collections)
 	if err != nil {
 		h.writeError(w, http.StatusServiceUnavailable, err.Error(), contentType)
 		return
 	}
 
-	responses := h.getHostsReponses(hosts, body)
+	responses := h.getHostsReponses(r.Context(), hosts, body)
 
 	h.composeResponse(w, responses)
 }
 
-func (h *Handler) getHostsReponses(hosts []host.Host, body []byte) []hostResponse {
+func (h *Handler) getHostsReponses(ctx context.Context, hosts []host.Host, body []byte) []hostResponse {
 	responses := make([]hostResponse, len(hosts))
 	wg := &sync.WaitGroup{}
 	for i, host := range hosts {
 		wg.Go(func() {
-			responses[i] = h.queryHost(host, body)
+			responses[i] = h.queryHost(ctx, host, body)
 		})
 	}
 	wg.Wait()
@@ -108,7 +109,7 @@ func (h *Handler) getHostsReponses(hosts []host.Host, body []byte) []hostRespons
 	return responses
 }
 
-func (h *Handler) queryHost(host host.Host, body []byte) hostResponse {
+func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) hostResponse {
 	panic("implement me!")
 }
 
