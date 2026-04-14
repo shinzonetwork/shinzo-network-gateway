@@ -1,12 +1,12 @@
 package endpoint
 
 import (
-	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
 
+	"github.com/goccy/go-json"
 	"go.uber.org/zap"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
@@ -22,6 +22,23 @@ type Handler struct {
 	extractor CollectionsExtractor
 	selector  HostsSelector
 	logger    *zap.Logger
+}
+
+// graphQLRequest is the JSON body of a GraphQL-over-HTTP POST request per the GraphQL-over-HTTP spec.
+// Query is required; OperationName, Variables, and Extensions are optional.
+type graphQLRequest struct {
+	Query         string          `json:"query"`
+	OperationName string          `json:"operationName,omitempty"`
+	Variables     json.RawMessage `json:"variables,omitempty"`
+	Extensions    json.RawMessage `json:"extensions,omitempty"`
+}
+
+// graphQLResponse is the top-level GraphQL response per the GraphQL spec (Section 7).
+// For execution results, Data is present (possibly null). For request errors, Data must be absent.
+type graphQLResponse struct {
+	Data       json.RawMessage `json:"data,omitempty"`
+	Errors     []gqlError      `json:"errors,omitempty"`
+	Extensions json.RawMessage `json:"extensions,omitempty"`
 }
 
 type hostResponse struct {
@@ -43,28 +60,33 @@ func NewHandler(extractor CollectionsExtractor, selector HostsSelector, logger *
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.logger.Sugar().Debugw("serving HTTP request", "from", r.RemoteAddr)
 
-	mediaType := h.getContentType(r)
-	if mediaType == "" {
+	contentType := h.getContentType(r)
+	if contentType == "" {
 		w.WriteHeader(http.StatusNotAcceptable)
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, err.Error(), mediaType)
+		h.writeError(w, http.StatusBadRequest, err.Error(), contentType)
 		return
 	}
 
-	collections, err := h.extractor.ExtractCollections(string(body))
+	var gqlReq graphQLRequest
+	if err := json.Unmarshal(body, &gqlReq); err != nil {
+		h.writeError(w, requestErrorStatus(contentType), "invalid JSON body", contentType)
+		return
+	}
+
+	collections, err := h.extractor.ExtractCollections(gqlReq.Query)
 	if err != nil {
-		// GraphQL request errors: 400 for graphql-response+json, 200 for application/json per spec.
-		h.writeError(w, requestErrorStatus(mediaType), err.Error(), mediaType)
+		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
 		return
 	}
 
 	hosts, err := h.selector.SelectHosts(collections)
 	if err != nil {
-		h.writeError(w, http.StatusServiceUnavailable, err.Error(), mediaType)
+		h.writeError(w, http.StatusServiceUnavailable, err.Error(), contentType)
 		return
 	}
 
@@ -111,7 +133,7 @@ func (h *Handler) getContentType(r *http.Request) string {
 
 // writeError writes a GraphQL error response with the given status code and message.
 func (h *Handler) writeError(w http.ResponseWriter, status int, message string, mediaType string) {
-	body, err := json.Marshal(gqlErrorResponse{Errors: []gqlError{{Message: message}}})
+	body, err := json.Marshal(graphQLResponse{Errors: []gqlError{{Message: message}}})
 	if err != nil {
 		h.logger.Sugar().Errorw("failed to marshal error response", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)

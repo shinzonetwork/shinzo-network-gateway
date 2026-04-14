@@ -3,6 +3,8 @@ package endpoint
 import (
 	"errors"
 	"net/http"
+
+	json "github.com/goccy/go-json"
 )
 
 const (
@@ -14,12 +16,16 @@ const (
 
 // gqlError is a single GraphQL error object per the GraphQL spec.
 type gqlError struct {
-	Message string `json:"message"`
+	Message    string          `json:"message"`
+	Locations  []gqlLocation   `json:"locations,omitempty"`
+	Path       []any           `json:"path,omitempty"`
+	Extensions json.RawMessage `json:"extensions,omitempty"`
 }
 
-// gqlErrorResponse is the top-level error response body per the GraphQL spec.
-type gqlErrorResponse struct {
-	Errors []gqlError `json:"errors"`
+// gqlLocation identifies a position in the GraphQL document associated with an error.
+type gqlLocation struct {
+	Line   int `json:"line"`
+	Column int `json:"column"`
 }
 
 // ErrEmptyQuery is returned if GraphQL query is empty.
