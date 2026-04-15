@@ -3,6 +3,7 @@ package endpoint
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -144,6 +145,10 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return hostResponse{err: err}
+	}
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return hostResponse{err: fmt.Errorf("host %s returned HTTP %d", host, resp.StatusCode)}
 	}
 
 	return hostResponse{response: respBody}

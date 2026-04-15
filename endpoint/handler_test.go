@@ -458,6 +458,7 @@ func setupTestHosts(kinds []hostKind) testHosts {
 			}))
 			servers = append(servers, srv)
 			th.hosts[idx] = host.Host(srv.URL)
+			th.wantErr[idx] = true
 
 		case kindUnreachable:
 			// RFC 5737 TEST-NET-1: guaranteed unreachable.
