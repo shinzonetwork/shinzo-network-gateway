@@ -28,6 +28,7 @@ type HostsSelector interface {
 type Handler struct {
 	extractor CollectionsExtractor
 	selector  HostsSelector
+	client    *http.Client
 	logger    *zap.Logger
 }
 
@@ -58,9 +59,15 @@ type hostResponse struct {
 
 // NewHandler creates new Handler instance.
 func NewHandler(extractor CollectionsExtractor, selector HostsSelector, logger *zap.Logger) *Handler {
+	transport := &http.Transport{
+		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+	}
+
 	return &Handler{
 		extractor: extractor,
 		selector:  selector,
+		client:    &http.Client{Transport: transport},
 		logger:    logger.Named("handler"),
 	}
 }
@@ -120,9 +127,12 @@ func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body
 	return responses
 }
 
-// timeout defines timeout for host query
-// TODO(tzdybal): extract timeout as config.
-const timeout = 5 * time.Second
+// TODO(tzdybal): extract as config.
+const (
+	timeout               = 5 * time.Second
+	maxIdleConnsPerHost   = 20
+	responseHeaderTimeout = 10 * time.Second
+)
 
 func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) hostResponse {
 	h.logger.Sugar().Debugw("sending query to host", "host", host, "body", body)
@@ -136,8 +146,7 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", contentTypeGraphQLResponse)
 
-	// TODO(tzdybal): HTTP client per host, for more optimal resource usage
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.client.Do(req)
 	if err != nil {
 		return hostResponse{err: err}
 	}
