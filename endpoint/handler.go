@@ -111,9 +111,13 @@ func (h *Handler) getHostsReponses(ctx context.Context, hosts []host.Host, body 
 	return responses
 }
 
+// timeout defines timeout for host query
+// TODO(tzdybal): extract timeout as config.
+const timeout = 5 * time.Second
+
 func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) hostResponse {
-	// TODO(tzdybal): extract timeout as config
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	h.logger.Sugar().Debugw("sending query to host", "host", host, "body", body)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	url := string(host) + "/graphql"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
