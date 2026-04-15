@@ -31,12 +31,15 @@ type gqlLocation struct {
 // ErrEmptyQuery is returned if GraphQL query is empty.
 var ErrEmptyQuery = errors.New("empty GraphQL query")
 
+// ErrHostHTTP is returned when an upstream host responds with a non-2xx status.
+var ErrHostHTTP = errors.New("host HTTP error")
+
 // requestErrorStatus returns the HTTP status for a GraphQL request error.
 // As defined in GraphQL-over-HTTP spec:
 //   - application/json responses to well-formed requests SHOULD use 200.
 //   - application/graphql-response+json uses 400 for request errors.
-func requestErrorStatus(mediaType string) int {
-	if mediaType == contentTypeJSON {
+func requestErrorStatus(contentType string) int {
+	if contentType == contentTypeJSON {
 		return http.StatusOK
 	}
 	return http.StatusBadRequest

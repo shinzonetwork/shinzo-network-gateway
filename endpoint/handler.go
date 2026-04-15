@@ -2,6 +2,7 @@ package endpoint
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -98,7 +99,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	responses := h.getHostsReponses(r.Context(), hosts, body)
 
-	h.composeResponse(w, responses)
+	h.composeResponse(w, responses, contentType)
 }
 
 func (h *Handler) getHostsReponses(ctx context.Context, hosts []host.Host, body []byte) []hostResponse {
@@ -148,7 +149,7 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return hostResponse{err: fmt.Errorf("host %s returned HTTP %d", host, resp.StatusCode)}
+		return hostResponse{err: fmt.Errorf("host %s returned HTTP %d: %w", host, resp.StatusCode, ErrHostHTTP)}
 	}
 
 	return hostResponse{response: respBody}
@@ -172,10 +173,10 @@ type consensusExtension struct {
 	Responses []responseGroup `json:"responses,omitempty"`
 }
 
-func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostResponse) {
+func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostResponse, contentType string) {
 	groups := groupResponses(responses)
 	if len(groups) == 0 {
-		h.writeError(w, http.StatusBadGateway, "no successful hosts responses", contentTypeGraphQLResponse)
+		h.writeError(w, http.StatusBadGateway, "no successful hosts responses", contentType)
 		return
 	}
 
@@ -202,14 +203,14 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 	extJSON, err := json.Marshal(ext)
 	if err != nil {
 		h.logger.Sugar().Errorw("failed to marshal consensus extension", "error", err)
-		h.writeError(w, http.StatusInternalServerError, "internal error", contentTypeGraphQLResponse)
+		h.writeError(w, http.StatusInternalServerError, "internal error", contentType)
 		return
 	}
 
 	var hostResp graphQLResponse
 	if err := json.Unmarshal([]byte(groups[0].body), &hostResp); err != nil {
 		h.logger.Sugar().Errorw("failed to parse host response", "error", err)
-		h.writeError(w, http.StatusBadGateway, "invalid host response", contentTypeGraphQLResponse)
+		h.writeError(w, http.StatusBadGateway, "invalid host response", contentType)
 		return
 	}
 
@@ -222,11 +223,11 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 	body, err := json.Marshal(resp)
 	if err != nil {
 		h.logger.Sugar().Errorw("failed to marshal response", "error", err)
-		h.writeError(w, http.StatusInternalServerError, "internal error", contentTypeGraphQLResponse)
+		h.writeError(w, http.StatusInternalServerError, "internal error", contentType)
 		return
 	}
 
-	w.Header().Set("Content-Type", contentTypeGraphQLResponse+"; charset=utf-8")
+	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(body)
 	if err != nil {
@@ -269,30 +270,90 @@ func groupResponses(responses []hostResponse) []groupedResponse {
 	return sorted
 }
 
-// getContentType picks the response content type from the Accept header.
-// As defined in GraphQL-over-HTTP spec: prefers application/graphql-response+json; falls back to application/json.
+// getContentType negotiates the response content type from the Accept header per RFC 9110.
 // Returns "" if no supported type is acceptable (caller should respond 406).
 func getContentType(r *http.Request) string {
 	accept := r.Header.Get("Accept")
-	switch {
-	case accept == "", strings.Contains(accept, "*/*"), strings.Contains(accept, contentTypeGraphQLResponse):
+	if accept == "" {
 		return contentTypeGraphQLResponse
-	case strings.Contains(accept, contentTypeJSON):
-		return contentTypeJSON
-	default:
-		return ""
 	}
+
+	return negotiateContentType(accept, []string{contentTypeGraphQLResponse, contentTypeJSON})
+}
+
+func negotiateContentType(accept string, supported []string) string {
+	type entry struct {
+		mtype, subtype string
+		quality        float64
+	}
+
+	var entries []entry
+	for part := range strings.SplitSeq(accept, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		mediaType, rest, _ := strings.Cut(part, ";")
+		mediaType = strings.TrimSpace(mediaType)
+
+		q := 1.0
+		for param := range strings.SplitSeq(rest, ";") {
+			key, val, ok := strings.Cut(strings.TrimSpace(param), "=")
+			if ok && strings.TrimSpace(key) == "q" {
+				if parsed, err := strconv.ParseFloat(strings.TrimSpace(val), 64); err == nil {
+					q = parsed
+				}
+			}
+		}
+
+		mtype, subtype, _ := strings.Cut(mediaType, "/")
+		entries = append(entries, entry{mtype: mtype, subtype: subtype, quality: q})
+	}
+
+	wildcards := func(e entry) int {
+		n := 0
+		if e.mtype == "*" {
+			n++
+		}
+		if e.subtype == "*" {
+			n++
+		}
+		return n
+	}
+
+	// Sort by quality descending, then specificity descending. Stable preserves client order for ties.
+	slices.SortStableFunc(entries, func(a, b entry) int {
+		if c := cmp.Compare(b.quality, a.quality); c != 0 {
+			return c
+		}
+		return cmp.Compare(wildcards(a), wildcards(b))
+	})
+
+	for _, e := range entries {
+		if e.quality == 0 {
+			continue
+		}
+		for _, s := range supported {
+			sType, sSubtype, _ := strings.Cut(s, "/")
+			if (e.mtype == "*" || e.mtype == sType) && (e.subtype == "*" || e.subtype == sSubtype) {
+				return s
+			}
+		}
+	}
+
+	return ""
 }
 
 // writeError writes a GraphQL error response with the given status code and message.
-func (h *Handler) writeError(w http.ResponseWriter, status int, message string, mediaType string) {
+func (h *Handler) writeError(w http.ResponseWriter, status int, message string, contentType string) {
 	body, err := json.Marshal(graphQLResponse{Errors: []gqlError{{Message: message}}})
 	if err != nil {
 		h.logger.Sugar().Errorw("failed to marshal error response", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", mediaType+"; charset=utf-8")
+	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 	w.WriteHeader(status)
 	_, err = w.Write(body)
 	if err != nil {

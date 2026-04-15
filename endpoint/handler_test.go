@@ -80,6 +80,46 @@ func TestGetContentType(t *testing.T) {
 			request:  &http.Request{Header: map[string][]string{"Accept": {"text/html"}}},
 			expected: "",
 		},
+		{
+			name:     "multiple types - graphql preferred by quality",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"application/json; q=0.5, application/graphql-response+json; q=1.0"}}},
+			expected: contentTypeGraphQLResponse,
+		},
+		{
+			name:     "multiple types - json preferred by quality",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"application/graphql-response+json; q=0.5, application/json; q=1.0"}}},
+			expected: contentTypeJSON,
+		},
+		{
+			name:     "q=0 rejects type",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"application/graphql-response+json; q=0, application/json"}}},
+			expected: contentTypeJSON,
+		},
+		{
+			name:     "all supported types rejected with q=0",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"application/graphql-response+json; q=0, application/json; q=0"}}},
+			expected: "",
+		},
+		{
+			name:     "wildcard with lower quality than explicit type",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"application/json, */*; q=0.1"}}},
+			expected: contentTypeJSON,
+		},
+		{
+			name:     "application wildcard subtype",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"application/*"}}},
+			expected: contentTypeGraphQLResponse,
+		},
+		{
+			name:     "mixed supported and unsupported types",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"text/html, application/json"}}},
+			expected: contentTypeJSON,
+		},
+		{
+			name:     "equal quality preserves client order",
+			request:  &http.Request{Header: map[string][]string{"Accept": {"application/json, application/graphql-response+json"}}},
+			expected: contentTypeJSON,
+		},
 	}
 
 	for _, c := range cases {
@@ -229,7 +269,7 @@ func TestHandler(t *testing.T) {
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
 				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
 			},
-			wantStatus: http.StatusOK,
+			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
 		},
 		{
