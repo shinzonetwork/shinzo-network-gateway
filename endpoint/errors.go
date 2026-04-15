@@ -34,6 +34,9 @@ var ErrEmptyQuery = errors.New("empty GraphQL query")
 // ErrHostHTTP is returned when an upstream host responds with a non-2xx status.
 var ErrHostHTTP = errors.New("host HTTP error")
 
+// ErrResponseTooLarge is returned when an upstream host response exceeds the size limit.
+var ErrResponseTooLarge = errors.New("response too large")
+
 // requestErrorStatus returns the HTTP status for a GraphQL request error.
 // As defined in GraphQL-over-HTTP spec:
 //   - application/json responses to well-formed requests SHOULD use 200.

@@ -169,6 +169,10 @@ func TestHandlerGetHostsResponses(t *testing.T) {
 			kinds:   []hostKind{kindOK, kindTimeout, kindError},
 			timeout: 100 * time.Millisecond,
 		},
+		{
+			name:  "large response host",
+			kinds: []hostKind{kindLargeResponse},
+		},
 	}
 
 	for _, c := range cases {
@@ -238,6 +242,11 @@ func TestHandler(t *testing.T) {
 			body:        `not json`,
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: "invalid JSON body",
+		},
+		{
+			name:       "request body too large",
+			body:       strings.Repeat("x", maxRequestBodySize+1),
+			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name: "extractor error",
@@ -446,6 +455,7 @@ const (
 	kindTimeout
 	kindError
 	kindUnreachable
+	kindLargeResponse
 )
 
 type testHosts struct {
@@ -503,6 +513,16 @@ func setupTestHosts(kinds []hostKind) testHosts {
 		case kindUnreachable:
 			// RFC 5737 TEST-NET-1: guaranteed unreachable.
 			th.hosts[idx] = host.Host("http://192.0.2.1:1")
+			th.wantErr[idx] = true
+
+		case kindLargeResponse:
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				th.hits[idx].Add(1)
+				w.Header().Set("Content-Type", "application/graphql-response+json")
+				_, _ = w.Write(make([]byte, maxResponseBodySize+1))
+			}))
+			servers = append(servers, srv)
+			th.hosts[idx] = host.Host(srv.URL)
 			th.wantErr[idx] = true
 		}
 	}

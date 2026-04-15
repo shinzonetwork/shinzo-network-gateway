@@ -81,6 +81,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, err.Error(), contentType)
@@ -132,6 +133,8 @@ const (
 	timeout               = 5 * time.Second
 	maxIdleConnsPerHost   = 20
 	responseHeaderTimeout = 10 * time.Second
+	maxRequestBodySize    = 64 << 10 // 64 KiB
+	maxResponseBodySize   = 1 << 20  // 1 MiB
 )
 
 func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) hostResponse {
@@ -157,9 +160,13 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 		}
 	}()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
 	if err != nil {
 		return hostResponse{err: err}
+	}
+
+	if len(respBody) > maxResponseBodySize {
+		return hostResponse{err: fmt.Errorf("host %s response too large: %w", host, ErrResponseTooLarge)}
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
