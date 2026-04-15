@@ -226,6 +226,7 @@ func TestHandler(t *testing.T) {
 		name           string
 		body           string
 		accept         string
+		reqContentType string
 		setupExtractor func(*mockExtractor)
 		setupSelector  func(*mockSelector, []host.Host)
 		wantStatus     int
@@ -244,9 +245,24 @@ func TestHandler(t *testing.T) {
 			wantBodyHas: "invalid JSON body",
 		},
 		{
+			name:   "invalid JSON body with legacy content type",
+			body:   `not json`,
+			accept: "application/json",
+
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: "invalid JSON body",
+		},
+		{
 			name:       "request body too large",
 			body:       strings.Repeat("x", maxRequestBodySize+1),
-			wantStatus: http.StatusBadRequest,
+			wantStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:           "missing request content type",
+			body:           `{"query":"{ hero { name } }"}`,
+			reqContentType: "none",
+			wantStatus:     http.StatusUnsupportedMediaType,
+			wantBodyHas:    "unsupported Content-Type",
 		},
 		{
 			name: "extractor error",
@@ -319,7 +335,14 @@ func TestHandler(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(c.body))
-			req.Header.Set("Content-Type", "application/json")
+			switch c.reqContentType {
+			case "none":
+				req.Header.Del("Content-Type")
+			case "":
+				req.Header.Set("Content-Type", "application/json")
+			default:
+				req.Header.Set("Content-Type", c.reqContentType)
+			}
 			req.Header.Set("Accept", accept)
 			w := httptest.NewRecorder()
 

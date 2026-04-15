@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -81,16 +82,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	reqContentType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
+	if strings.TrimSpace(reqContentType) != contentTypeJSON {
+		h.writeError(w, http.StatusUnsupportedMediaType, "unsupported Content-Type", contentType)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, err.Error(), contentType)
+		status := http.StatusBadRequest
+		if errors.As(err, new(*http.MaxBytesError)) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		h.writeError(w, status, err.Error(), contentType)
 		return
 	}
 
 	var gqlReq graphQLRequest
 	if err := json.Unmarshal(body, &gqlReq); err != nil {
-		h.writeError(w, requestErrorStatus(contentType), "invalid JSON body", contentType)
+		h.writeError(w, http.StatusBadRequest, "invalid JSON body", contentType)
 		return
 	}
 
