@@ -51,6 +51,7 @@ type graphQLResponse struct {
 }
 
 type hostResponse struct {
+	host     host.Host
 	response []byte
 	err      error
 }
@@ -111,6 +112,10 @@ func (h *Handler) getHostsReponses(ctx context.Context, hosts []host.Host, body 
 		})
 	}
 	wg.Wait()
+
+	for i := range responses {
+		responses[i].host = hosts[i]
+	}
 
 	return responses
 }
@@ -244,7 +249,7 @@ func groupResponses(responses []hostResponse) []groupedResponse {
 	order := make([]string, 0)
 	groups := make(map[string]*groupedResponse)
 
-	for i, r := range responses {
+	for _, r := range responses {
 		if r.err != nil {
 			continue
 		}
@@ -255,7 +260,7 @@ func groupResponses(responses []hostResponse) []groupedResponse {
 			groups[key] = g
 			order = append(order, key)
 		}
-		g.hosts = append(g.hosts, host.Host("host-"+strconv.Itoa(i)))
+		g.hosts = append(g.hosts, r.host)
 	}
 
 	// Sort by count descending, stable to preserve first-seen order for ties.
