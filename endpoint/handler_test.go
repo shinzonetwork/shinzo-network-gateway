@@ -230,8 +230,7 @@ func TestHandler(t *testing.T) {
 				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
 			},
 			wantStatus: http.StatusOK,
-			// TODO(tzdybal): this is extremely fragile in the long run, probably should have a list of substrings we need in response
-			wantBodyHas: `{"data":{"data":{"hero":{"name":"Luke"}}},"extensions":{"consensus":"full"}}`,
+			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
 		},
 		{
 			name:   "legacy content type uses 200 for request errors",

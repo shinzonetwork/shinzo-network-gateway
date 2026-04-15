@@ -201,8 +201,16 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 		return
 	}
 
+	var hostResp graphQLResponse
+	if err := json.Unmarshal([]byte(groups[0].body), &hostResp); err != nil {
+		h.logger.Sugar().Errorw("failed to parse host response", "error", err)
+		h.writeError(w, http.StatusBadGateway, "invalid host response", contentTypeGraphQLResponse)
+		return
+	}
+
 	resp := graphQLResponse{
-		Data:       json.RawMessage(groups[0].body),
+		Data:       hostResp.Data,
+		Errors:     hostResp.Errors,
 		Extensions: extJSON,
 	}
 
