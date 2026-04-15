@@ -188,7 +188,7 @@ func TestHandlerGetHostsResponses(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
-			responses := h.getHostsReponses(ctx, th.hosts, body)
+			responses := h.getHostsResponses(ctx, th.hosts, body)
 
 			require.Len(t, responses, len(c.kinds))
 

@@ -98,12 +98,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responses := h.getHostsReponses(r.Context(), hosts, body)
+	responses := h.getHostsResponses(r.Context(), hosts, body)
 
 	h.composeResponse(w, responses, contentType)
 }
 
-func (h *Handler) getHostsReponses(ctx context.Context, hosts []host.Host, body []byte) []hostResponse {
+func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body []byte) []hostResponse {
 	responses := make([]hostResponse, len(hosts))
 	wg := &sync.WaitGroup{}
 	for i, host := range hosts {
