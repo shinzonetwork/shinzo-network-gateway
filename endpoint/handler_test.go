@@ -18,6 +18,12 @@ import (
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 )
 
+var (
+	errParse   = errors.New("parse error")
+	errNoHosts = errors.New("no hosts")
+	errFail    = errors.New("fail")
+)
+
 type mockExtractor struct {
 	mock.Mock
 }
@@ -197,7 +203,7 @@ func TestHandler(t *testing.T) {
 			name: "extractor error",
 			body: `{"query":"bad"}`,
 			setupExtractor: func(ext *mockExtractor) {
-				ext.On("ExtractCollections", "bad").Return([]string(nil), errors.New("parse error"))
+				ext.On("ExtractCollections", "bad").Return([]string(nil), errParse)
 			},
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: "parse error",
@@ -209,7 +215,7 @@ func TestHandler(t *testing.T) {
 				ext.On("ExtractCollections", "{ hero { name } }").Return([]string{"hero"}, nil)
 			},
 			setupSelector: func(sel *mockSelector, _ []host.Host) {
-				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return([]host.Host(nil), errors.New("no hosts"))
+				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return([]host.Host(nil), errNoHosts)
 			},
 			wantStatus:  http.StatusServiceUnavailable,
 			wantBodyHas: "no hosts",
@@ -232,7 +238,7 @@ func TestHandler(t *testing.T) {
 			body:   `{"query":"bad"}`,
 			accept: "application/json",
 			setupExtractor: func(ext *mockExtractor) {
-				ext.On("ExtractCollections", "bad").Return([]string(nil), errors.New("parse error"))
+				ext.On("ExtractCollections", "bad").Return([]string(nil), errParse)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: "parse error",
@@ -288,8 +294,6 @@ func TestGroupResponses(t *testing.T) {
 	dataA := []byte(`{"data":"a"}`)
 	dataB := []byte(`{"data":"b"}`)
 	dataC := []byte(`{"data":"c"}`)
-
-	errFail := errors.New("fail")
 
 	cases := []struct {
 		name       string
