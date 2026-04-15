@@ -471,6 +471,143 @@ func TestGroupResponses(t *testing.T) {
 	}
 }
 
+func TestComposeResponse(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := zap.NewDevelopment()
+
+	cases := []struct {
+		name        string
+		responses   []hostResponse
+		contentType string
+		wantStatus  int
+		wantBodyHas string
+	}{
+		{
+			name:        "no successful responses returns 502",
+			responses:   []hostResponse{{err: errFail}, {err: errFail}},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusBadGateway,
+			wantBodyHas: "no successful hosts responses",
+		},
+		{
+			name: "full consensus",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"data":{"a":1}}`)},
+				{host: "h2", response: []byte(`{"data":{"a":1}}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"consensus":"full"`,
+		},
+		{
+			name: "partial consensus",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"data":{"a":1}}`)},
+				{host: "h2", response: []byte(`{"data":{"a":1}}`)},
+				{host: "h3", response: []byte(`{"data":{"a":2}}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"consensus":"partial"`,
+		},
+		{
+			name: "no consensus",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"data":{"a":1}}`)},
+				{host: "h2", response: []byte(`{"data":{"a":2}}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"consensus":"none"`,
+		},
+		{
+			name: "partial consensus includes responses in extension",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"data":{"a":1}}`)},
+				{host: "h2", response: []byte(`{"data":{"a":1}}`)},
+				{host: "h3", response: []byte(`{"data":{"a":2}}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"responses":[`,
+		},
+		{
+			name: "full consensus omits responses in extension",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"data":{"a":1}}`)},
+				{host: "h2", response: []byte(`{"data":{"a":1}}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"extensions":{"consensus":"full"}`,
+		},
+		{
+			name: "invalid host response JSON returns 502",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`not json`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusBadGateway,
+			wantBodyHas: "invalid host response",
+		},
+		{
+			name: "host response with errors passes through",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"errors":[{"message":"upstream error"}]}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: "upstream error",
+		},
+		{
+			name: "data field is forwarded",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"data":{"hero":{"name":"Luke"}}}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"hero":{"name":"Luke"}`,
+		},
+		{
+			name: "errors skipped in grouping",
+			responses: []hostResponse{
+				{host: "h1", err: errFail},
+				{host: "h2", response: []byte(`{"data":{"a":1}}`)},
+			},
+			contentType: contentTypeGraphQLResponse,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"consensus":"full"`,
+		},
+		{
+			name: "legacy content type in response header",
+			responses: []hostResponse{
+				{host: "h1", response: []byte(`{"data":{"a":1}}`)},
+			},
+			contentType: contentTypeJSON,
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `"consensus":"full"`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			h := NewHandler(nil, nil, logger)
+			w := httptest.NewRecorder()
+
+			h.composeResponse(w, c.responses, c.contentType)
+
+			assert.Equal(t, c.wantStatus, w.Code)
+			assert.Contains(t, w.Body.String(), c.wantBodyHas)
+
+			assert.Contains(t, w.Header().Get("Content-Type"), c.contentType,
+				"response Content-Type should match requested type")
+		})
+	}
+}
+
 type hostKind int
 
 const (
