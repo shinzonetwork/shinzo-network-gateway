@@ -63,7 +63,7 @@ func NewHandler(extractor CollectionsExtractor, selector HostsSelector, logger *
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.logger.Sugar().Debugw("serving HTTP request", "from", r.RemoteAddr)
 
-	contentType := h.getContentType(r)
+	contentType := getContentType(r)
 	if contentType == "" {
 		w.WriteHeader(http.StatusNotAcceptable)
 		return
@@ -150,7 +150,7 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 // getContentType picks the response content type from the Accept header.
 // As defined in GraphQL-over-HTTP spec: prefers application/graphql-response+json; falls back to application/json.
 // Returns "" if no supported type is acceptable (caller should respond 406).
-func (h *Handler) getContentType(r *http.Request) string {
+func getContentType(r *http.Request) string {
 	accept := r.Header.Get("Accept")
 	switch {
 	case accept == "", strings.Contains(accept, "*/*"), strings.Contains(accept, contentTypeGraphQLResponse):
