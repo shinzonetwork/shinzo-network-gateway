@@ -2,18 +2,39 @@ package endpoint
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 )
+
+type mockExtractor struct {
+	mock.Mock
+}
+
+func (m *mockExtractor) ExtractCollections(graphql string) ([]string, error) {
+	args := m.Called(graphql)
+	return args.Get(0).([]string), args.Error(1)
+}
+
+type mockSelector struct {
+	mock.Mock
+}
+
+func (m *mockSelector) SelectHosts(ctx context.Context, collections []string) ([]host.Host, error) {
+	args := m.Called(ctx, collections)
+	return args.Get(0).([]host.Host), args.Error(1)
+}
 
 func TestGetContentType(t *testing.T) {
 	t.Parallel()
@@ -143,6 +164,238 @@ func TestHandlerGetHostsResponses(t *testing.T) {
 	}
 }
 
+func TestHandler(t *testing.T) {
+	t.Parallel()
+
+	logger, _ := zap.NewDevelopment()
+	defer func() {
+		_ = logger.Sync()
+	}()
+
+	cases := []struct {
+		name           string
+		body           string
+		accept         string
+		setupExtractor func(*mockExtractor)
+		setupSelector  func(*mockSelector, []host.Host)
+		wantStatus     int
+		wantBodyHas    string
+	}{
+		{
+			name:       "unsupported accept header",
+			body:       `{"query":"{ hero { name } }"}`,
+			accept:     "text/html",
+			wantStatus: http.StatusNotAcceptable,
+		},
+		{
+			name:        "invalid JSON body",
+			body:        `not json`,
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: "invalid JSON body",
+		},
+		{
+			name: "extractor error",
+			body: `{"query":"bad"}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", "bad").Return([]string(nil), errors.New("parse error"))
+			},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: "parse error",
+		},
+		{
+			name: "selector error",
+			body: `{"query":"{ hero { name } }"}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", "{ hero { name } }").Return([]string{"hero"}, nil)
+			},
+			setupSelector: func(sel *mockSelector, _ []host.Host) {
+				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return([]host.Host(nil), errors.New("no hosts"))
+			},
+			wantStatus:  http.StatusServiceUnavailable,
+			wantBodyHas: "no hosts",
+		},
+		{
+			name: "successful query",
+			body: `{"query":"{ hero { name } }"}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", "{ hero { name } }").Return([]string{"hero"}, nil)
+			},
+			setupSelector: func(sel *mockSelector, hosts []host.Host) {
+				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
+			},
+			wantStatus: http.StatusOK,
+			// TODO(tzdybal): this is extremely fragile in the long run, probably should have a list of substrings we need in response
+			wantBodyHas: `{"data":{"data":{"hero":{"name":"Luke"}}},"extensions":{"consensus":"full"}}`,
+		},
+		{
+			name:   "legacy content type uses 200 for request errors",
+			body:   `{"query":"bad"}`,
+			accept: "application/json",
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", "bad").Return([]string(nil), errors.New("parse error"))
+			},
+			wantStatus:  http.StatusOK,
+			wantBodyHas: "parse error",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			okHost := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/graphql-response+json")
+				_, _ = w.Write([]byte(`{"data":{"hero":{"name":"Luke"}}}`))
+			}))
+			defer okHost.Close()
+			ext := &mockExtractor{}
+			sel := &mockSelector{}
+			if c.setupExtractor != nil {
+				c.setupExtractor(ext)
+			}
+			if c.setupSelector != nil {
+				c.setupSelector(sel, []host.Host{host.Host(okHost.URL)})
+			}
+
+			h := NewHandler(ext, sel, logger)
+
+			accept := c.accept
+			if accept == "" {
+				accept = contentTypeGraphQLResponse
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(c.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", accept)
+			w := httptest.NewRecorder()
+
+			h.ServeHTTP(w, req)
+
+			assert.Equal(t, c.wantStatus, w.Code)
+			if c.wantBodyHas != "" {
+				assert.Contains(t, w.Body.String(), c.wantBodyHas)
+			}
+
+			ext.AssertExpectations(t)
+			sel.AssertExpectations(t)
+		})
+	}
+}
+
+func TestGroupResponses(t *testing.T) {
+	t.Parallel()
+
+	dataA := []byte(`{"data":"a"}`)
+	dataB := []byte(`{"data":"b"}`)
+	dataC := []byte(`{"data":"c"}`)
+
+	errFail := errors.New("fail")
+
+	cases := []struct {
+		name       string
+		responses  []hostResponse
+		wantLen    int
+		wantBodies []string
+		wantHosts  [][]host.Host
+	}{
+		{
+			name:      "all errors returns empty",
+			responses: []hostResponse{{err: errFail}, {err: errFail}},
+			wantLen:   0,
+		},
+		{
+			name: "single response",
+			responses: []hostResponse{
+				{response: dataA},
+			},
+			wantLen:    1,
+			wantBodies: []string{string(dataA)},
+			wantHosts:  [][]host.Host{{"host-0"}},
+		},
+		{
+			name: "all same response - full consensus",
+			responses: []hostResponse{
+				{response: dataA},
+				{response: dataA},
+				{response: dataA},
+			},
+			wantLen:    1,
+			wantBodies: []string{string(dataA)},
+			wantHosts:  [][]host.Host{{"host-0", "host-1", "host-2"}},
+		},
+		{
+			name: "majority wins - partial consensus",
+			responses: []hostResponse{
+				{response: dataA},
+				{response: dataB},
+				{response: dataA},
+			},
+			wantLen:    2,
+			wantBodies: []string{string(dataA), string(dataB)},
+			wantHosts:  [][]host.Host{{"host-0", "host-2"}, {"host-1"}},
+		},
+		{
+			name: "tie - none consensus",
+			responses: []hostResponse{
+				{response: dataA},
+				{response: dataB},
+			},
+			wantLen:    2,
+			wantBodies: []string{string(dataA), string(dataB)},
+			wantHosts:  [][]host.Host{{"host-0"}, {"host-1"}},
+		},
+		{
+			name: "errors are skipped",
+			responses: []hostResponse{
+				{err: errFail},
+				{response: dataA},
+				{response: dataA},
+			},
+			wantLen:    1,
+			wantBodies: []string{string(dataA)},
+			wantHosts:  [][]host.Host{{"host-1", "host-2"}},
+		},
+		{
+			name: "three distinct responses ordered by popularity",
+			responses: []hostResponse{
+				{response: dataC},
+				{response: dataA},
+				{response: dataA},
+				{response: dataC},
+				{response: dataA},
+				{response: dataB},
+			},
+			wantLen:    3,
+			wantBodies: []string{string(dataA), string(dataC), string(dataB)},
+			wantHosts:  [][]host.Host{{"host-1", "host-2", "host-4"}, {"host-0", "host-3"}, {"host-5"}},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			groups := groupResponses(c.responses)
+			require.Len(t, groups, c.wantLen)
+
+			if c.wantLen == 0 {
+				return
+			}
+
+			for i, wantBody := range c.wantBodies {
+				assert.Equal(t, wantBody, groups[i].body, "group[%d] body", i)
+				assert.Equal(t, c.wantHosts[i], groups[i].hosts, "group[%d] hosts", i)
+			}
+
+			// Verify descending order by popularity.
+			for i := 1; i < len(groups); i++ {
+				assert.GreaterOrEqual(t, len(groups[i-1].hosts), len(groups[i].hosts),
+					"groups should be ordered by popularity descending")
+			}
+		})
+	}
+}
+
 type hostKind int
 
 const (
@@ -182,7 +435,7 @@ func setupTestHosts(kinds []hostKind) testHosts {
 			th.hosts[idx] = host.Host(srv.URL)
 
 		case kindTimeout:
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				th.hits[idx].Add(1)
 				select {
 				case <-r.Context().Done():
