@@ -2,12 +2,12 @@ package router
 
 import (
 	"crypto/rand"
+	"math"
 	"slices"
 	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gonum.org/v1/gonum/stat/distuv"
 )
 
 func mustGetDeckSampler(t *testing.T, n int) *deckSampler[string] {
@@ -115,52 +115,36 @@ func TestDeckSamplerReshuffle(t *testing.T) {
 	}
 }
 
-func TestDeckSamplerDistribution(t *testing.T) {
+func TestDeckSamplerFairness(t *testing.T) {
 	t.Parallel()
 
 	const (
-		n     = 100
-		s     = 15
-		reps  = (n/s + 1) * 100
-		alpha = float64(0.05)
+		n           = 100
+		s           = 15
+		cycles      = 5000
+		stddevLimit = 5.0 // to avoid test flakiness, allow some deviation factor
 	)
 
-	sampler := mustGetDeckSampler(t, n)
+	// Per cycle the deck draws (n/s)*s distinct items uniformly from the pool,
+	// so each item's total count is Binomial(cycles, p) with p = drawn/pool.
+	p := float64((n/s)*s) / float64(n)
+	mean := p * float64(cycles)
+	stddev := math.Sqrt(float64(cycles) * p * (1 - p))
 
+	sampler := mustGetDeckSampler(t, n)
 	cnt := make(map[string]int)
-	for range reps {
+	for range cycles * (n / s) {
 		sample, err := sampler.Sample(s)
 		require.NoError(t, err)
-		require.Len(t, sample, s)
 		for _, item := range sample {
 			cnt[item]++
 		}
 	}
 	require.Len(t, cnt, n)
 
-	chi2 := chi2(cnt)
-	p := distuv.ChiSquared{K: float64(n - 1)}.Survival(chi2)
-
-	require.Greaterf(t, p, alpha, "sample distribution is not uniform after %d repetitions, chi squared: %f, p: %f", reps, chi2, p)
-}
-
-func chi2(histogram map[string]int) float64 {
-	k := len(histogram)
-	if k < 2 {
-		return 0
+	for item, c := range cnt {
+		require.Lessf(t, math.Abs(float64(c)-mean)/stddev, stddevLimit,
+			"item %s drawn %d times, expected %.1f ± %.1f, stddevLimit=%.1f",
+			item, c, mean, stddev, stddevLimit)
 	}
-
-	sum := 0
-	for _, c := range histogram {
-		sum += c
-	}
-
-	expected := float64(sum) / float64(k)
-	chi2 := float64(0)
-	for _, c := range histogram {
-		d := float64(c) - expected
-		chi2 += d * d / expected
-	}
-
-	return chi2
 }
