@@ -6,8 +6,13 @@ import (
 	"slices"
 )
 
-// ErrSampleExceedsPool is returned by sampler, when requested sample size exceeds pool size.
-var ErrSampleExceedsPool = errors.New("sample size exceeds pool size")
+var (
+	// ErrNegativeSampleSize is returned by sampler, when requested sample size is negative.
+	ErrNegativeSampleSize = errors.New("sample size cannot be negative")
+
+	// ErrSampleExceedsPool is returned by sampler, when requested sample size exceeds pool size.
+	ErrSampleExceedsPool = errors.New("sample size exceeds pool size")
+)
 
 // Sampler is for sampling n elements from a pool, without replacement.
 type Sampler[T any] interface {
@@ -30,10 +35,12 @@ func newDeckSampler[T any](pool []T, seed [32]byte) *deckSampler[T] {
 
 func (d *deckSampler[T]) Sample(n int) ([]T, error) {
 	l := len(d.pool)
-	if n > l {
+	switch {
+	case n < 0:
+		return nil, ErrNegativeSampleSize
+	case n > l:
 		return nil, ErrSampleExceedsPool
-	}
-	if n+d.pos > len(d.pool) {
+	case n+d.pos > len(d.pool):
 		d.shuffle()
 		d.pos = 0
 	}

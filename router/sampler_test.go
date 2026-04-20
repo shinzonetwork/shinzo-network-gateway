@@ -51,10 +51,10 @@ func TestDeckSamplerEdges(t *testing.T) {
 			name: "negative items",
 			n:    10,
 			s:    -1,
-			err:  nil,
+			err:  ErrNegativeSampleSize,
 		},
 		{
-			name: "all items",
+			name: "exactly all items",
 			n:    10,
 			s:    10,
 			err:  nil,
