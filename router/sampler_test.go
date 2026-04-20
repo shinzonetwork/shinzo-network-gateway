@@ -26,7 +26,64 @@ func mustGetDeckSampler(t *testing.T, n int) *deckSampler[string] {
 	return sampler
 }
 
-func TestDeckSamplerCorrectness(t *testing.T) {
+func TestDeckSamplerEdges(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		n    int
+		s    int
+		err  error
+	}{
+		{
+			name: "single item",
+			n:    10,
+			s:    1,
+			err:  nil,
+		},
+		{
+			// it makes not much sense, but sampling 0 elements is not invalid
+			name: "zero items",
+			n:    10,
+			s:    0,
+			err:  nil,
+		},
+		{
+			name: "negative items",
+			n:    10,
+			s:    -1,
+			err:  nil,
+		},
+		{
+			name: "all items",
+			n:    10,
+			s:    10,
+			err:  nil,
+		},
+		{
+			name: "too many items",
+			n:    10,
+			s:    11,
+			err:  ErrSampleExceedsPool,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			sampler := mustGetDeckSampler(t, c.n)
+			sample, err := sampler.Sample(c.s)
+			if c.err == nil {
+				require.NoError(t, err)
+				require.Len(t, sample, c.s)
+			} else {
+				require.ErrorIs(t, err, c.err)
+				require.Nil(t, sample)
+			}
+		})
+	}
+}
+
+func TestDeckSamplerReshuffle(t *testing.T) {
 	t.Parallel()
 
 	const (
