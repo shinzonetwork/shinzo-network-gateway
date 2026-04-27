@@ -5,22 +5,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/endpoint"
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-)
-
-const (
-	defaultTimeout    = 5 * time.Second
-	defaultInterval   = 10 * time.Second
-	defaultListenAddr = ":8080"
-	defaultSampleSize = 3
-
-	flagListen = "listen"
-	flagSample = "sample-size"
 )
 
 func (a *App) newStartCmd() (*cobra.Command, error) {

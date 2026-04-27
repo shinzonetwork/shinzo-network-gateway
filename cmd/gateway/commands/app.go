@@ -3,9 +3,21 @@ package commands
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+const (
+	defaultTimeout    = 5 * time.Second
+	defaultInterval   = 10 * time.Second
+	defaultListenAddr = ":8080"
+	defaultSampleSize = 3
+
+	flagListen  = "listen"
+	flagSample  = "sample-size"
+	flagTimeout = "timeout"
 )
 
 // App is the main application struct holding configuration state.
@@ -48,7 +60,12 @@ func (a *App) newRootCmd() (*cobra.Command, error) {
 	if err != nil {
 		return nil, err
 	}
+	queryCmd, err := a.newQueryCommand()
+	if err != nil {
+		return nil, err
+	}
 	cmd.AddCommand(startCmd)
+	cmd.AddCommand(queryCmd)
 
 	return cmd, nil
 }
