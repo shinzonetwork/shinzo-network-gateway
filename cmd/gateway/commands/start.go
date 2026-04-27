@@ -8,6 +8,7 @@ import (
 
 	"github.com/shinzonetwork/shinzo-network-gateway/endpoint"
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
+	"github.com/shinzonetwork/shinzo-network-gateway/router"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -51,7 +52,9 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("error while starting host registry: %w", err)
 	}
 
-	handler := endpoint.NewHandler(&endpoint.DefaultCollectionExtractor{}, nil, logger)
+	router := router.New(registry, logger)
+
+	handler := endpoint.NewHandler(&endpoint.DefaultCollectionExtractor{}, router, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {
 		return fmt.Errorf("error while creating endpoint: %w", err)

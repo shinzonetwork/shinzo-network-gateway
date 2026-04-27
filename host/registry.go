@@ -16,7 +16,7 @@ type Registry struct {
 
 	providers   []Provider
 	connChecker ConnectionChecker
-	hosts       map[Host]*info
+	hosts       map[Host]*Info
 
 	cancel   context.CancelFunc
 	errGroup *errgroup.Group
@@ -34,7 +34,7 @@ func NewRegistry(config Config, providers []Provider, connChecker ConnectionChec
 	return &Registry{
 		config:      config,
 		events:      make(chan Event),
-		hosts:       make(map[Host]*info),
+		hosts:       make(map[Host]*Info),
 		logger:      logger.Named("Registry"),
 		providers:   providers,
 		connChecker: connChecker,
@@ -74,6 +74,18 @@ func (r *Registry) Close() error {
 	return err
 }
 
+// GetOnlineHosts returns information about all online hosts.
+func (r *Registry) GetOnlineHosts() map[Host]*Info {
+	online := make(map[Host]*Info)
+
+	for h, i := range r.hosts {
+		if i.Online {
+			online[h] = i
+		}
+	}
+	return online
+}
+
 func (r *Registry) eventLoop(ctx context.Context) error {
 	for {
 		select {
@@ -100,7 +112,7 @@ func (r *Registry) handle(ctx context.Context, e Event) error {
 			r.logger.Sugar().Infow("host already registered", "address", e.Host)
 			return nil
 		}
-		r.hosts[e.Host] = &info{}
+		r.hosts[e.Host] = &Info{}
 		r.errGroup.Go(func() error {
 			return r.connCheckerWorker(ctx, e.Host)
 		})
@@ -108,9 +120,9 @@ func (r *Registry) handle(ctx context.Context, e Event) error {
 		// TODO(tzdybal): stop connection checker worker!
 		delete(r.hosts, e.Host)
 	case HostOnline:
-		r.hosts[e.Host].online = true
+		r.hosts[e.Host].Online = true
 	case HostOffline:
-		r.hosts[e.Host].online = false
+		r.hosts[e.Host].Online = false
 	default:
 		r.logger.Sugar().Errorw("unknown event type", "type", e.Type)
 	}
@@ -158,8 +170,8 @@ const (
 	HostOffline                       // host is unreachable
 )
 
-type info struct {
-	online bool
+type Info struct {
+	Online bool
 	// TODO(tzdybal): gather and use more information about hosts
-	// lastQuery time.Time
+	Collections []string
 }
