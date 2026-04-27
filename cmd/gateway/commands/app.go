@@ -22,12 +22,17 @@ func NewApp() *App {
 // Execute runs the root command.
 func Execute() {
 	app := NewApp()
-	if err := app.newRootCmd().Execute(); err != nil {
+	rootCmd, err := app.newRootCmd()
+	if err != nil {
+		// TODO(tzdybal): log / panic
+		os.Exit(1)
+	}
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func (a *App) newRootCmd() *cobra.Command {
+func (a *App) newRootCmd() (*cobra.Command, error) {
 	cmd := &cobra.Command{
 		Use:   "gateway",
 		Short: "Shinzo Network Gateway",
@@ -39,9 +44,13 @@ func (a *App) newRootCmd() *cobra.Command {
 		return a.initConfig()
 	}
 
-	cmd.AddCommand(a.newStartCmd())
+	startCmd, err := a.newStartCmd()
+	if err != nil {
+		return nil, err
+	}
+	cmd.AddCommand(startCmd)
 
-	return cmd
+	return cmd, nil
 }
 
 func (a *App) initConfig() error {

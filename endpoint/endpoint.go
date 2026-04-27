@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // TODO(tzdybal): refactor as config.
@@ -13,10 +15,12 @@ const readHeaderTimeout = 5 * time.Second
 // Endpoint handles GraphQL over HTTP requests.
 type Endpoint struct {
 	server *http.Server
+
+	logger *zap.Logger
 }
 
 // New creates new endpoint.
-func New(addr string, handler *Handler) (*Endpoint, error) {
+func New(addr string, handler *Handler, logger *zap.Logger) (*Endpoint, error) {
 	mux, err := setupMux(handler)
 	if err != nil {
 		return nil, err
@@ -27,12 +31,14 @@ func New(addr string, handler *Handler) (*Endpoint, error) {
 			Handler:           mux,
 			ReadHeaderTimeout: readHeaderTimeout,
 		},
+		logger: logger.Named("Endpoint"),
 	}, nil
 }
 
 // ListenAndServe starts serving HTTP requests and blocks untile the server is shut down.
 // TODO(tzdybal): add TLS support.
 func (e *Endpoint) ListenAndServe() error {
+	e.logger.Sugar().Infow("Starting endpoint", "listen address", e.server.Addr)
 	err := e.server.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
