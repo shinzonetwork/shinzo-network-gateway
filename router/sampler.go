@@ -23,6 +23,9 @@ type Sampler[T any] interface {
 	// Pool returns all elements in the pool in unspecified order.
 	// This method might return direct reference to underlying pool.
 	Pool() []T
+
+	// Reset sets the pool and forces re-shuffle on next call to Sample.
+	Reset(pool []T)
 }
 
 type deckSampler[T any] struct {
@@ -58,6 +61,11 @@ func (d *deckSampler[T]) Sample(n int) ([]T, error) {
 
 func (d *deckSampler[T]) Pool() []T {
 	return d.pool
+}
+
+func (d *deckSampler[T]) Reset(pool []T) {
+	d.pos = len(pool)
+	d.pool = pool
 }
 
 func (d *deckSampler[T]) shuffle() {

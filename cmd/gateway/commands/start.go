@@ -52,9 +52,9 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("error while starting host registry: %w", err)
 	}
 
-	router := router.New(registry, logger)
+	r := router.New(registry, logger)
 
-	handler := endpoint.NewHandler(&endpoint.DefaultCollectionExtractor{}, router, logger)
+	handler := endpoint.NewHandler(&endpoint.DefaultCollectionExtractor{}, r, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {
 		return fmt.Errorf("error while creating endpoint: %w", err)

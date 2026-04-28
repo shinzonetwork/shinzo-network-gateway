@@ -38,12 +38,14 @@ func (p *pool) add(h host.Host) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	// TODO(tzdybal): consider checking if host is already in the pool
-	hosts := append(p.hosts.Pool(), h)
-	slices.Sort(hosts)
-	hosts = slices.Compact(hosts)
+	hosts := p.hosts.Pool()
+	if !slices.Contains(hosts, h) {
+		hosts = append(hosts, h)
+		slices.Sort(hosts)
+		hosts = slices.Compact(hosts)
 
-	p.hosts = newDeckSampler(hosts, mustGetSeed())
+		p.hosts.Reset(hosts)
+	}
 }
 
 func (p *pool) remove(h host.Host) {
@@ -57,7 +59,7 @@ func (p *pool) remove(h host.Host) {
 	})
 
 	if len(hosts) != n {
-		p.hosts = newDeckSampler(hosts, mustGetSeed())
+		p.hosts.Reset(hosts)
 	}
 }
 

@@ -48,6 +48,7 @@ func New(registry *host.Registry, logger *zap.Logger) *Router {
 			pool, ok := r.pools[c]
 			if !ok {
 				pool = newPool(c, nil, logger)
+				r.pools[c] = pool
 			}
 			pool.add(h)
 		}
