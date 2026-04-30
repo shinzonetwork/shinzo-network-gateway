@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	// TODO(tzdybal): this has to be configurable
+	// TODO(tzdybal): this has to be configurable.
 	sampleSize = 3
 )
 
@@ -44,7 +44,7 @@ func New(registry *host.Registry, logger *zap.Logger) *Router {
 
 	hosts := registry.GetOnlineHosts()
 	for h, i := range hosts {
-		for _, c := range i.Collections {
+		for _, c := range i.GetCollections() {
 			pool, ok := r.pools[c]
 			if !ok {
 				pool = newPool(c, nil, logger)

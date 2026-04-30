@@ -3,6 +3,8 @@ package host
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -79,7 +81,7 @@ func (r *Registry) GetOnlineHosts() map[Host]*Info {
 	online := make(map[Host]*Info)
 
 	for h, i := range r.hosts {
-		if i.Online {
+		if i.GetOnline() {
 			online[h] = i
 		}
 	}
@@ -170,8 +172,41 @@ const (
 	HostOffline                       // host is unreachable
 )
 
+// Info holds host information in thread safe way.
 type Info struct {
-	Online bool
+	online bool
 	// TODO(tzdybal): gather and use more information about hosts
-	Collections []string
+	collections []string
+
+	mtx sync.Mutex
+}
+
+func NewInfo() *Info {
+	return &Info{}
+}
+
+func (i *Info) SetOnline(o bool) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+	i.online = o
+}
+
+func (i *Info) GetOnline() bool {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+	return i.online
+}
+
+func (i *Info) SetCollections(collections []string) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	i.collections = collections
+}
+
+func (i *Info) GetCollections() []string {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	return slices.Clone(i.collections)
 }
