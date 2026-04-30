@@ -18,7 +18,10 @@ type Registry struct {
 
 	providers   []Provider
 	connChecker ConnectionChecker
+	collFetcher CollectionsFetcher
 	hosts       map[Host]*Info
+
+	collWorkers map[Host]context.CancelFunc
 
 	cancel   context.CancelFunc
 	errGroup *errgroup.Group
@@ -28,18 +31,27 @@ type Registry struct {
 
 // Config holds configuration for the Registry.
 type Config struct {
-	ConnCheckInterval time.Duration
+	ConnCheckInterval          time.Duration
+	CollectionsRefreshInterval time.Duration
 }
 
-// NewRegistry creates a new Registry with the given configuration, host providers, and connection checker.
-func NewRegistry(config Config, providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
+// NewRegistry creates a new Registry with the given configuration, host providers, connection checker, and collections fetcher.
+func NewRegistry(
+	config Config,
+	providers []Provider,
+	connChecker ConnectionChecker,
+	collFetcher CollectionsFetcher,
+	logger *zap.Logger,
+) *Registry {
 	return &Registry{
 		config:      config,
 		events:      make(chan Event),
 		hosts:       make(map[Host]*Info),
+		collWorkers: make(map[Host]context.CancelFunc),
 		logger:      logger.Named("Registry"),
 		providers:   providers,
 		connChecker: connChecker,
+		collFetcher: collFetcher,
 	}
 }
 
@@ -120,15 +132,68 @@ func (r *Registry) handle(ctx context.Context, e Event) error {
 		})
 	case HostDeregistered:
 		// TODO(tzdybal): stop connection checker worker!
+		r.stopCollectionsWorker(e.Host)
 		delete(r.hosts, e.Host)
 	case HostOnline:
-		r.hosts[e.Host].Online = true
+		r.hosts[e.Host].SetOnline(true)
+		r.startCollectionsWorker(ctx, e.Host)
 	case HostOffline:
-		r.hosts[e.Host].Online = false
+		r.hosts[e.Host].SetOnline(false)
+		r.stopCollectionsWorker(e.Host)
 	default:
 		r.logger.Sugar().Errorw("unknown event type", "type", e.Type)
 	}
 	return nil
+}
+
+func (r *Registry) startCollectionsWorker(ctx context.Context, h Host) {
+	if r.collFetcher == nil {
+		return
+	}
+	if _, running := r.collWorkers[h]; running {
+		return
+	}
+	workerCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is invoked by stopCollectionsWorker
+	r.collWorkers[h] = cancel
+	r.errGroup.Go(func() error {
+		return r.collectionsWorker(workerCtx, h)
+	})
+}
+
+func (r *Registry) stopCollectionsWorker(h Host) {
+	if cancel, ok := r.collWorkers[h]; ok {
+		cancel()
+		delete(r.collWorkers, h)
+	}
+}
+
+func (r *Registry) collectionsWorker(ctx context.Context, h Host) error {
+	r.fetchAndStoreCollections(ctx, h)
+
+	ticker := time.NewTicker(r.config.CollectionsRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil
+			}
+			return ctx.Err()
+		case <-ticker.C:
+			r.fetchAndStoreCollections(ctx, h)
+		}
+	}
+}
+
+func (r *Registry) fetchAndStoreCollections(ctx context.Context, h Host) {
+	names, err := r.collFetcher.FetchCollections(ctx, h)
+	if err != nil {
+		r.logger.Sugar().Debugw("collections fetch failed", "host", h, "error", err)
+		return
+	}
+	if info, ok := r.hosts[h]; ok {
+		info.SetCollections(names)
+	}
 }
 
 func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {

@@ -42,18 +42,6 @@ func New(registry *host.Registry, logger *zap.Logger) *Router {
 		logger:   logger.Named("Router"),
 	}
 
-	hosts := registry.GetOnlineHosts()
-	for h, i := range hosts {
-		for _, c := range i.GetCollections() {
-			pool, ok := r.pools[c]
-			if !ok {
-				pool = newPool(c, nil, logger)
-				r.pools[c] = pool
-			}
-			pool.add(h)
-		}
-	}
-
 	return r
 }
 
@@ -63,7 +51,21 @@ func (r *Router) SelectHosts(_ context.Context, collections []string) ([]host.Ho
 		return nil, ErrPoolNotSupported
 	}
 
+	// TODO(tzdybal): this is absolutely not efficient, but needs bigger refactoring
+	hosts := r.registry.GetOnlineHosts()
+	for h, i := range hosts {
+		for _, c := range i.GetCollections() {
+			pool, ok := r.pools[c]
+			if !ok {
+				pool = newPool(c, nil, r.logger)
+				r.pools[c] = pool
+			}
+			pool.add(h)
+		}
+	}
+
 	col := collections[0]
+	r.logger.Sugar().Debugf("searching for a pool for collection: %s", col)
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	pool, ok := r.pools[col]

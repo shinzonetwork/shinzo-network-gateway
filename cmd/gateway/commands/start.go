@@ -45,7 +45,17 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	provider := host.NewFileProvider("hosts.txt")
 	provider.SetLogger(logger)
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
-	registry := host.NewRegistry(host.Config{ConnCheckInterval: defaultInterval}, []host.Provider{provider}, connChecker, logger)
+	collFetcher := host.NewHTTPCollectionsFetcher(defaultTimeout, logger)
+	registry := host.NewRegistry(
+		host.Config{
+			ConnCheckInterval:          defaultInterval,
+			CollectionsRefreshInterval: defaultCollectionsInterval,
+		},
+		[]host.Provider{provider},
+		connChecker,
+		collFetcher,
+		logger,
+	)
 
 	err = registry.Start(cmd.Context())
 	if err != nil {

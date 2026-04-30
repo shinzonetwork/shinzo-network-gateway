@@ -10,10 +10,11 @@ import (
 )
 
 const (
-	defaultTimeout    = 5 * time.Second
-	defaultInterval   = 10 * time.Second
-	defaultListenAddr = ":8080"
-	defaultSampleSize = 3
+	defaultTimeout             = 60 * time.Second
+	defaultInterval            = 10 * time.Second
+	defaultCollectionsInterval = 10 * time.Minute
+	defaultListenAddr          = ":8080"
+	defaultSampleSize          = 3
 
 	flagListen  = "listen"
 	flagSample  = "sample-size"

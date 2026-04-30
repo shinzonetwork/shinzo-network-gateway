@@ -12,7 +12,8 @@ import (
 const defaultInterval = 5 * time.Second
 
 var defaultConfig = Config{
-	ConnCheckInterval: defaultInterval,
+	ConnCheckInterval:          defaultInterval,
+	CollectionsRefreshInterval: defaultInterval,
 }
 
 func TestNewRegistry(t *testing.T) {
@@ -20,7 +21,7 @@ func TestNewRegistry(t *testing.T) {
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 	providers := make([]Provider, 10)
-	reg := NewRegistry(defaultConfig, providers, nil, logger)
+	reg := NewRegistry(defaultConfig, providers, nil, nil, logger)
 	require.NotNil(t, reg)
 	require.NotNil(t, reg.events)
 	require.NotNil(t, reg.hosts)
@@ -44,7 +45,7 @@ func TestRegistryStartStop(t *testing.T) {
 		provider.SetLogger(logger)
 	}
 
-	reg := NewRegistry(defaultConfig, providers, nil, logger)
+	reg := NewRegistry(defaultConfig, providers, nil, nil, logger)
 	require.NotNil(t, reg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
