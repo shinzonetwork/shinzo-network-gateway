@@ -246,22 +246,26 @@ type Info struct {
 	mtx sync.Mutex
 }
 
+// NewInfo creates new instance of Info object.
 func NewInfo() *Info {
 	return &Info{}
 }
 
+// SetOnline updates the online status, safe for concurrentuse.
 func (i *Info) SetOnline(o bool) {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
 	i.online = o
 }
 
+// GetOnline returns online status, safe for concurrent use.
 func (i *Info) GetOnline() bool {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
 	return i.online
 }
 
+// SetCollections sets the collections, safe for concurrent use.
 func (i *Info) SetCollections(collections []string) {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
@@ -269,6 +273,7 @@ func (i *Info) SetCollections(collections []string) {
 	i.collections = collections
 }
 
+// GetCollections gets the collections, safe for concurrent use.
 func (i *Info) GetCollections() []string {
 	i.mtx.Lock()
 	defer i.mtx.Unlock()
