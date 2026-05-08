@@ -5,7 +5,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/shinzonetwork/shinzo-network-gateway)](https://goreportcard.com/report/github.com/shinzonetwork/shinzo-network-gateway)
 
 The Shinzo Network Gateway is the primary entry point through which users interact with the Shinzo network.
-It serves as a trustless routing and coordination layer - responsible for resolving which hosts serve a given piece of data, routing queries to those hosts, validating responses, and maintaining network integrity through cryptographic and economic mechanisms.
+It is a trustless routing and coordination layer that resolves which hosts serve a given piece of data, routes queries to those hosts, validates responses, and maintains network integrity through cryptographic and economic mechanisms.
 
 ## GraphQL extensions
 
@@ -13,22 +13,26 @@ The gateway is GraphQL-over-HTTP compliant and accepts the standard request body
 
 On the response side, the gateway routes each query to multiple upstream hosts and compares their answers. Every successful response carries an `extensions.consensus` object that tells you how much the hosts agreed.
 
-### `extensions.consensus`
+### extensions.consensus
 
 `consensus` is a string with one of three values:
 
-- **`full`** — every host that responded returned the same answer. The result is fully agreed upon.
-- **`partial`** — hosts disagreed, but one response was strictly more popular than the others. The gateway returns the majority answer in `data`/`errors`.
-- **`none`** — the top two response groups were tied. The gateway returns the first-seen response in `data`/`errors`, but no group has a majority and the result should be treated with caution.
+| Value | Description |
+| --- | --- |
+| `full` | Every host that responded returned the same answer. The result is fully agreed upon. |
+| `partial` | Hosts disagreed, but one response was strictly more popular than the others. The gateway returns the majority answer in `data`/`errors`. |
+| `none` | The top two response groups were tied. The gateway returns the first-seen response in `data`/`errors`, but no group has a majority and the result should be treated with caution. |
 
 Hosts that fail to respond (network errors, non-2xx status, oversized bodies) are excluded from the comparison. If every host fails, the gateway returns an error instead of a GraphQL response.
 
-### `extensions.responses`
+### extensions.responses
 
 When `consensus` is `partial` or `none`, the gateway also includes a `responses` array so clients can see exactly what each host returned and decide for themselves whether to trust the chosen answer. Each entry contains:
 
-- `response` — the raw response body returned by a group of hosts.
-- `hosts` — the URLs of the hosts that returned that exact response.
+| Value | Description |
+| --- | --- |
+| `response` | The raw response body returned by a group of hosts. |
+| `hosts` | The URLs of the hosts that returned that exact response. |
 
 Groups are ordered by how many hosts returned each response, most popular first. The first entry is always the response that was promoted to the top level of the gateway reply.
 
@@ -77,6 +81,6 @@ No consensus (1 vs 1 tie):
 
 ### Recommended client handling
 
-- `full` — trust the response.
-- `partial` — trust the response by default, but inspect `responses` if disagreement among hosts is meaningful for your use case.
-- `none` — the gateway has picked one answer arbitrarily from a tie. Inspect `responses` and decide which to accept, or retry.
+- `full`: trust the response.
+- `partial`: trust the response by default, but inspect `responses` if disagreement among hosts is meaningful for your use case.
+- `none`: the gateway has picked one answer arbitrarily from a tie. Inspect `responses` and decide which to accept, or retry.
