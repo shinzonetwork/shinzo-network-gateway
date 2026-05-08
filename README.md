@@ -8,18 +8,20 @@ The Shinzo Network Gateway is the primary entry point through which users intera
 It serves as a trustless routing and coordination layer - responsible for resolving which hosts serve a given piece of data, routing queries to those hosts, validating responses, and maintaining network integrity through cryptographic and economic mechanisms.
 
 
-> **Status: prototype / intensive development.** Everything — APIs, configuration, behavior, on-disk formats — can change at any time without notice. Not ready for production use.
+> [!WARNING]
+> **Do not use in production environments.**
+> This is under intensive development. Everything (APIs, configuration, behavior, on-disk formats, etc) can change at any time without notice.
 
 ## Build
 
-```sh
+```shell
 go build ./...
 go test ./...
 ```
 
 ## Run
 
-```sh
+```shell
 go run ./cmd/gateway
 ```
 
