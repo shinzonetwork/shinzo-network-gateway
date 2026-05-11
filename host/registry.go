@@ -3,6 +3,8 @@ package host
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -16,7 +18,10 @@ type Registry struct {
 
 	providers   []Provider
 	connChecker ConnectionChecker
-	hosts       map[Host]*info
+	collFetcher CollectionsFetcher
+	hosts       map[Host]*Info
+
+	collWorkers map[Host]context.CancelFunc
 
 	cancel   context.CancelFunc
 	errGroup *errgroup.Group
@@ -26,18 +31,27 @@ type Registry struct {
 
 // Config holds configuration for the Registry.
 type Config struct {
-	ConnCheckInterval time.Duration
+	ConnCheckInterval          time.Duration
+	CollectionsRefreshInterval time.Duration
 }
 
-// NewRegistry creates a new Registry with the given configuration, host providers, and connection checker.
-func NewRegistry(config Config, providers []Provider, connChecker ConnectionChecker, logger *zap.Logger) *Registry {
+// NewRegistry creates a new Registry with the given configuration, host providers, connection checker, and collections fetcher.
+func NewRegistry(
+	config Config,
+	providers []Provider,
+	connChecker ConnectionChecker,
+	collFetcher CollectionsFetcher,
+	logger *zap.Logger,
+) *Registry {
 	return &Registry{
 		config:      config,
 		events:      make(chan Event),
-		hosts:       make(map[Host]*info),
+		hosts:       make(map[Host]*Info),
+		collWorkers: make(map[Host]context.CancelFunc),
 		logger:      logger.Named("Registry"),
 		providers:   providers,
 		connChecker: connChecker,
+		collFetcher: collFetcher,
 	}
 }
 
@@ -74,6 +88,18 @@ func (r *Registry) Close() error {
 	return err
 }
 
+// GetOnlineHosts returns information about all online hosts.
+func (r *Registry) GetOnlineHosts() map[Host]*Info {
+	online := make(map[Host]*Info)
+
+	for h, i := range r.hosts {
+		if i.GetOnline() {
+			online[h] = i
+		}
+	}
+	return online
+}
+
 func (r *Registry) eventLoop(ctx context.Context) error {
 	for {
 		select {
@@ -100,21 +126,74 @@ func (r *Registry) handle(ctx context.Context, e Event) error {
 			r.logger.Sugar().Infow("host already registered", "address", e.Host)
 			return nil
 		}
-		r.hosts[e.Host] = &info{}
+		r.hosts[e.Host] = &Info{}
 		r.errGroup.Go(func() error {
 			return r.connCheckerWorker(ctx, e.Host)
 		})
 	case HostDeregistered:
 		// TODO(tzdybal): stop connection checker worker!
+		r.stopCollectionsWorker(e.Host)
 		delete(r.hosts, e.Host)
 	case HostOnline:
-		r.hosts[e.Host].online = true
+		r.hosts[e.Host].SetOnline(true)
+		r.startCollectionsWorker(ctx, e.Host)
 	case HostOffline:
-		r.hosts[e.Host].online = false
+		r.hosts[e.Host].SetOnline(false)
+		r.stopCollectionsWorker(e.Host)
 	default:
 		r.logger.Sugar().Errorw("unknown event type", "type", e.Type)
 	}
 	return nil
+}
+
+func (r *Registry) startCollectionsWorker(ctx context.Context, h Host) {
+	if r.collFetcher == nil {
+		return
+	}
+	if _, running := r.collWorkers[h]; running {
+		return
+	}
+	workerCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is invoked by stopCollectionsWorker
+	r.collWorkers[h] = cancel
+	r.errGroup.Go(func() error {
+		return r.collectionsWorker(workerCtx, h)
+	})
+}
+
+func (r *Registry) stopCollectionsWorker(h Host) {
+	if cancel, ok := r.collWorkers[h]; ok {
+		cancel()
+		delete(r.collWorkers, h)
+	}
+}
+
+func (r *Registry) collectionsWorker(ctx context.Context, h Host) error {
+	r.fetchAndStoreCollections(ctx, h)
+
+	ticker := time.NewTicker(r.config.CollectionsRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil
+			}
+			return ctx.Err()
+		case <-ticker.C:
+			r.fetchAndStoreCollections(ctx, h)
+		}
+	}
+}
+
+func (r *Registry) fetchAndStoreCollections(ctx context.Context, h Host) {
+	names, err := r.collFetcher.FetchCollections(ctx, h)
+	if err != nil {
+		r.logger.Sugar().Debugw("collections fetch failed", "host", h, "error", err)
+		return
+	}
+	if info, ok := r.hosts[h]; ok {
+		info.SetCollections(names)
+	}
 }
 
 func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {
@@ -158,8 +237,46 @@ const (
 	HostOffline                       // host is unreachable
 )
 
-type info struct {
+// Info holds host information in thread safe way.
+type Info struct {
 	online bool
 	// TODO(tzdybal): gather and use more information about hosts
-	// lastQuery time.Time
+	collections []string
+
+	mtx sync.Mutex
+}
+
+// NewInfo creates new instance of Info object.
+func NewInfo() *Info {
+	return &Info{}
+}
+
+// SetOnline updates the online status, safe for concurrentuse.
+func (i *Info) SetOnline(o bool) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+	i.online = o
+}
+
+// GetOnline returns online status, safe for concurrent use.
+func (i *Info) GetOnline() bool {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+	return i.online
+}
+
+// SetCollections sets the collections, safe for concurrent use.
+func (i *Info) SetCollections(collections []string) {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	i.collections = collections
+}
+
+// GetCollections gets the collections, safe for concurrent use.
+func (i *Info) GetCollections() []string {
+	i.mtx.Lock()
+	defer i.mtx.Unlock()
+
+	return slices.Clone(i.collections)
 }

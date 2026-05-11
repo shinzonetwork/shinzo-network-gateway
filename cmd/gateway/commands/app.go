@@ -3,9 +3,22 @@ package commands
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+)
+
+const (
+	defaultTimeout             = 60 * time.Second
+	defaultInterval            = 10 * time.Second
+	defaultCollectionsInterval = 10 * time.Minute
+	defaultListenAddr          = ":8080"
+	defaultSampleSize          = 3
+
+	flagListen  = "listen"
+	flagSample  = "sample-size"
+	flagTimeout = "timeout"
 )
 
 // App is the main application struct holding configuration state.
@@ -22,12 +35,17 @@ func NewApp() *App {
 // Execute runs the root command.
 func Execute() {
 	app := NewApp()
-	if err := app.newRootCmd().Execute(); err != nil {
+	rootCmd, err := app.newRootCmd()
+	if err != nil {
+		// TODO(tzdybal): log / panic
+		os.Exit(1)
+	}
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func (a *App) newRootCmd() *cobra.Command {
+func (a *App) newRootCmd() (*cobra.Command, error) {
 	cmd := &cobra.Command{
 		Use:   "gateway",
 		Short: "Shinzo Network Gateway",
@@ -39,9 +57,18 @@ func (a *App) newRootCmd() *cobra.Command {
 		return a.initConfig()
 	}
 
-	cmd.AddCommand(a.newStartCmd())
+	startCmd, err := a.newStartCmd()
+	if err != nil {
+		return nil, err
+	}
+	queryCmd, err := a.newQueryCommand()
+	if err != nil {
+		return nil, err
+	}
+	cmd.AddCommand(startCmd)
+	cmd.AddCommand(queryCmd)
 
-	return cmd
+	return cmd, nil
 }
 
 func (a *App) initConfig() error {

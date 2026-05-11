@@ -5,24 +5,29 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
+	"github.com/shinzonetwork/shinzo-network-gateway/endpoint"
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
+	"github.com/shinzonetwork/shinzo-network-gateway/router"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
 
-const (
-	defaultTimeout  = 5 * time.Second
-	defaultInterval = 10 * time.Second
-)
-
-func (a *App) newStartCmd() *cobra.Command {
-	return &cobra.Command{
+func (a *App) newStartCmd() (*cobra.Command, error) {
+	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "starts the Shinzo Network Gateway",
 		RunE:  a.startGateway,
 	}
+	cmd.Flags().String(flagListen, defaultListenAddr, "HTTP listen address for GraphQL endpoint")
+	cmd.Flags().Int(flagSample, defaultSampleSize, "number of hosts for query fan out")
+
+	err := a.v.BindPFlags(cmd.Flags())
+	if err != nil {
+		return nil, err
+	}
+
+	return cmd, nil
 }
 
 func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
@@ -40,15 +45,38 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	provider := host.NewFileProvider("hosts.txt")
 	provider.SetLogger(logger)
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
-	registry := host.NewRegistry(host.Config{ConnCheckInterval: defaultInterval}, []host.Provider{provider}, connChecker, logger)
+	collFetcher := host.NewHTTPCollectionsFetcher(defaultTimeout, logger)
+	registry := host.NewRegistry(
+		host.Config{
+			ConnCheckInterval:          defaultInterval,
+			CollectionsRefreshInterval: defaultCollectionsInterval,
+		},
+		[]host.Provider{provider},
+		connChecker,
+		collFetcher,
+		logger,
+	)
 
 	err = registry.Start(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error while starting host registry: %w", err)
 	}
 
-	waitCh := make(chan error, 1)
-	go func() { waitCh <- registry.Wait() }()
+	r := router.New(registry, logger)
+
+	handler := endpoint.NewHandler(&endpoint.DefaultCollectionExtractor{}, r, logger)
+	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
+	if err != nil {
+		return fmt.Errorf("error while creating endpoint: %w", err)
+	}
+
+	endpErrCh := make(chan error, 1)
+	go func() {
+		endpErrCh <- endp.ListenAndServe()
+	}()
+
+	regErrCh := make(chan error, 1)
+	go func() { regErrCh <- registry.Wait() }()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
@@ -63,8 +91,11 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 				errCh <- err
 			}
 			errCh <- registry.Wait()
-		case err := <-waitCh:
+		case err := <-regErrCh:
 			logger.Sugar().Infow("registry exited", "error", err)
+			errCh <- err
+		case err := <-endpErrCh:
+			logger.Sugar().Infow("ednpoint exited", "error", err)
 			errCh <- err
 		}
 	}()

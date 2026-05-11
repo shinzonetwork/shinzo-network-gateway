@@ -141,7 +141,7 @@ func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body
 
 // TODO(tzdybal): extract as config.
 const (
-	timeout               = 5 * time.Second
+	timeout               = 120 * time.Second
 	maxIdleConnsPerHost   = 20
 	responseHeaderTimeout = 10 * time.Second
 	maxRequestBodySize    = 64 << 10 // 64 KiB
@@ -152,7 +152,7 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 	h.logger.Sugar().Debugw("sending query to host", "host", host, "body", body)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	url := string(host) + "/graphql"
+	url := string(host) + "/api/v0/graphql"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return hostResponse{err: err}
@@ -161,6 +161,7 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 	req.Header.Set("Accept", contentTypeGraphQLResponse)
 
 	resp, err := h.client.Do(req)
+	h.logger.Sugar().Debugw("HTTP", "resp", resp, "error", err)
 	if err != nil {
 		return hostResponse{err: err}
 	}
@@ -175,6 +176,7 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 	if err != nil {
 		return hostResponse{err: err}
 	}
+	h.logger.Sugar().Debugw("response", "resp", respBody, "host", host)
 
 	if len(respBody) > maxResponseBodySize {
 		return hostResponse{err: fmt.Errorf("host %s response too large: %w", host, ErrResponseTooLarge)}
