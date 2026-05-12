@@ -14,3 +14,4 @@ COPY hosts.txt /hosts.txt
 EXPOSE 8080
 USER nonroot
 ENTRYPOINT ["/gateway"]
+CMD ["start"]
