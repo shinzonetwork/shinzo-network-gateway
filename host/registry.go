@@ -59,8 +59,8 @@ func (r *Registry) Run(ctx context.Context) error {
 	wg := sync.WaitGroup{}
 	for _, provider := range r.providers {
 		wg.Go(func() {
-			if err := provider.Run(ctx, register, deregister); !errors.Is(err, context.Canceled) {
-				r.logger.Sugar().Error("provider exited", "error", err)
+			if err := provider.Run(ctx, register, deregister); err != nil && !errors.Is(err, context.Canceled) {
+				r.logger.Sugar().Errorw("provider exited", "error", err)
 			}
 		})
 	}
