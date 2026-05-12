@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 // Registry tracks known hosts and their connectivity status.
@@ -22,9 +21,6 @@ type Registry struct {
 	hosts       map[Host]*Info
 
 	collWorkers map[Host]context.CancelFunc
-
-	cancel   context.CancelFunc
-	errGroup *errgroup.Group
 
 	logger *zap.Logger
 }
@@ -57,35 +53,39 @@ func NewRegistry(
 
 // Start launches all providers and begins processing host events.
 func (r *Registry) Start(ctx context.Context) error {
-	ctx, r.cancel = context.WithCancel(ctx)
-	r.errGroup, ctx = errgroup.WithContext(ctx)
+	register := func(h Host) { r.register(ctx, h) }
+	deregister := func(h Host) { r.deregister(ctx, h) }
 
-	r.errGroup.Go(func() error {
-		return r.eventLoop(ctx)
-	})
-
+	wg := sync.WaitGroup{}
 	for _, provider := range r.providers {
-		r.errGroup.Go(func() error {
-			return provider.Start(ctx, r.events)
+		wg.Go(func() {
+			if err := provider.Start(ctx, register, deregister); !errors.Is(err, context.Canceled) {
+				r.logger.Sugar().Error("provider exited", "error", err)
+			}
 		})
 	}
 
+	<-ctx.Done()
+	wg.Wait()
 	return nil
+}
+
+func (r *Registry) register(ctx context.Context, h Host) {
+
+}
+
+func (r *Registry) deregister(ctx context.Context, h Host) {
+
 }
 
 // Wait blocks until all internal goroutines have stopped and returns the first non-nil error.
 func (r *Registry) Wait() error {
-	return r.errGroup.Wait()
+	return nil
 }
 
 // Close cancels the registry context and closes all providers.
 func (r *Registry) Close() error {
-	r.cancel()
-	var err error
-	for _, provider := range r.providers {
-		err = errors.Join(err, provider.Close())
-	}
-	return err
+	return nil
 }
 
 // GetOnlineHosts returns information about all online hosts.
@@ -127,9 +127,9 @@ func (r *Registry) handle(ctx context.Context, e Event) error {
 			return nil
 		}
 		r.hosts[e.Host] = &Info{}
-		r.errGroup.Go(func() error {
-			return r.connCheckerWorker(ctx, e.Host)
-		})
+		// r.errGroup.Go(func() error {
+		//	return r.connCheckerWorker(ctx, e.Host)
+		//})
 	case HostDeregistered:
 		// TODO(tzdybal): stop connection checker worker!
 		r.stopCollectionsWorker(e.Host)
@@ -153,11 +153,11 @@ func (r *Registry) startCollectionsWorker(ctx context.Context, h Host) {
 	if _, running := r.collWorkers[h]; running {
 		return
 	}
-	workerCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is invoked by stopCollectionsWorker
-	r.collWorkers[h] = cancel
-	r.errGroup.Go(func() error {
-		return r.collectionsWorker(workerCtx, h)
-	})
+	//workerCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is invoked by stopCollectionsWorker
+	//r.collWorkers[h] = cancel
+	//r.errGroup.Go(func() error {
+	//	return r.collectionsWorker(workerCtx, h)
+	//})
 }
 
 func (r *Registry) stopCollectionsWorker(h Host) {

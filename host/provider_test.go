@@ -24,31 +24,19 @@ func NewMockProvider(initialHosts []Host) *MockProvider {
 
 var _ Provider = &MockProvider{}
 
-func (mock *MockProvider) Start(ctx context.Context, updatesCH chan<- Event) error {
+func (mock *MockProvider) Start(ctx context.Context, register func(Host), _ func(Host)) error {
 	for _, h := range mock.hosts {
-		event := Event{
-			Type: HostRegistered,
-			Host: h,
-		}
 		select {
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.Canceled) {
 				return nil
 			}
 			return ctx.Err()
-		case updatesCH <- event:
-			mock.logger.Sugar().Debugw("event submitted", "host", h)
+		default:
 		}
+		register(h)
 	}
 	return nil
-}
-
-func (mock *MockProvider) Close() error {
-	return nil
-}
-
-func (mock *MockProvider) SetLogger(logger *zap.Logger) {
-	mock.logger = logger.Named("mock-provider")
 }
 
 func TestFileProvider(t *testing.T) {
@@ -61,13 +49,19 @@ func TestFileProvider(t *testing.T) {
 	p := NewFileProvider("./testdata/hosts.txt")
 	p.SetLogger(logger)
 
-	events := make(chan Event, 10)
+	cnt := 0
+	register := func(_ Host) {
+		cnt++
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	err = p.Start(ctx, events)
+	err = p.Start(ctx, register, nil)
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, p.Close())
-	}()
+	require.Eventually(t, func() bool { return cnt > 1 }, 1*time.Second, 50*time.Millisecond)
+}
+
+// SetLogger sets the logger used by the provider.
+func (mock *MockProvider) SetLogger(logger *zap.Logger) {
+	mock.logger = logger.Named("mock-provider")
 }
