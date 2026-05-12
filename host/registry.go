@@ -22,7 +22,9 @@ type Registry struct {
 
 	observers []Observer
 	providers []Provider
-	monitors  map[Host]context.CancelFunc
+
+	mtx      sync.Mutex
+	monitors map[Host]context.CancelFunc
 
 	providersWG sync.WaitGroup
 	monitorsWG  sync.WaitGroup
@@ -85,23 +87,26 @@ func (r *Registry) Run(ctx context.Context) error {
 }
 
 func (r *Registry) register(ctx context.Context, h Host) {
+	r.mtx.Lock()
 	if _, ok := r.monitors[h]; ok {
+		r.mtx.Unlock()
 		return
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	r.monitors[h] = cancel
+	r.mtx.Unlock()
 
 	r.monitorsWG.Go(func() {
 		r.monitor(ctx, h)
 	})
-
-	r.notifyHostUp(ctx, h)
 }
 
 func (r *Registry) deregister(ctx context.Context, h Host) {
+	r.mtx.Lock()
 	if cancel, ok := r.monitors[h]; ok {
 		cancel()
 		delete(r.monitors, h)
+		r.mtx.Unlock()
 
 		r.notifyHostDown(ctx, h)
 	}
@@ -113,23 +118,32 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 		colls  []string
 	)
 
+	checkConn := func() {
+		res := r.connChecker.CheckConnection(ctx, h)
+		if res.Online != online {
+			if res.Online {
+				r.notifyHostUp(ctx, h)
+			} else {
+				r.notifyHostDown(ctx, h)
+			}
+			online = res.Online
+		}
+	}
+
+	// start checking status imediatelly
+	checkConn()
+
 	connTicker := time.NewTicker(r.config.ConnCheckInterval)
+	defer connTicker.Stop()
 	collTicker := time.NewTicker(r.config.CollectionsRefreshInterval)
+	defer collTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-connTicker.C:
-			res := r.connChecker.CheckConnection(ctx, h)
-			if res.Online != online {
-				if res.Online == true {
-					r.notifyHostUp(ctx, h)
-				} else {
-					r.notifyHostDown(ctx, h)
-				}
-				online = res.Online
-			}
+			checkConn()
 		case <-collTicker.C:
 			newColls, err := r.collFetcher.FetchCollections(ctx, h)
 			if err != nil {
@@ -153,6 +167,7 @@ func (r *Registry) notifyHostUp(ctx context.Context, h Host) {
 		}
 	}
 }
+
 func (r *Registry) notifyHostDown(ctx context.Context, h Host) {
 	for _, o := range r.observers {
 		select {
@@ -167,7 +182,6 @@ func (r *Registry) notifyHostDown(ctx context.Context, h Host) {
 // notifyCollsUpdate compares oldColls with newCools, prepares a list of removed collections and list of added collections
 // It assumes that oldColls and newColls are sorted.
 func (r *Registry) notifyCollsUpdate(ctx context.Context, h Host, oldColls, newColls []string) {
-
 	added, removed := getSliceDiffs(oldColls, newColls)
 
 	for _, o := range r.observers {
@@ -183,16 +197,6 @@ func (r *Registry) notifyCollsUpdate(ctx context.Context, h Host, oldColls, newC
 			}
 		}
 	}
-}
-
-// Wait blocks until all internal goroutines have stopped and returns the first non-nil error.
-func (r *Registry) Wait() error {
-	return nil
-}
-
-// Close cancels the registry context and closes all providers.
-func (r *Registry) Close() error {
-	return nil
 }
 
 func getSliceDiffs(prev, next []string) (added []string, removed []string) {

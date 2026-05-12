@@ -37,14 +37,17 @@ func (m *mockObserver) Up(h Host) {
 	m.hosts[h] = struct{}{}
 	m.mtx.Unlock()
 }
+
 func (m *mockObserver) Down(h Host) {
 	m.mtx.Lock()
 	delete(m.hosts, h)
 	m.mtx.Unlock()
 }
+
 func (m *mockObserver) CollectionsAdded(_ Host, _ []string) {
 	// noop for now
 }
+
 func (m *mockObserver) CollectionsRemoved(_ Host, _ []string) {
 	// noop for now
 }
@@ -53,6 +56,12 @@ func (m *mockObserver) hostList() []Host {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	return slices.Collect(maps.Keys(m.hosts))
+}
+
+type mockConnChecker struct{}
+
+func (*mockConnChecker) CheckConnection(_ context.Context, _ Host) ConnectionStatus {
+	return ConnectionStatus{Online: true}
 }
 
 func TestNewRegistry(t *testing.T) {
@@ -84,19 +93,22 @@ func TestRegistryStartStop(t *testing.T) {
 
 	observer := newMockObserver()
 
-	reg := NewRegistry(defaultConfig, providers, []Observer{observer}, nil, nil, logger)
+	reg := NewRegistry(defaultConfig, providers, []Observer{observer}, &mockConnChecker{}, nil, logger)
 	require.NotNil(t, reg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	err = reg.Run(ctx)
-	require.NoError(t, err)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- reg.Run(ctx)
+	}()
 
 	require.Eventually(t, func() bool {
 		return len(observer.hostList()) == 5
-	}, 200*time.Millisecond, 10*time.Millisecond)
+	}, 500*time.Millisecond, 50*time.Millisecond)
+	cancel()
 
-	err = reg.Close()
+	err = <-errCh
 	require.NoError(t, err)
 }
 
