@@ -145,10 +145,13 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 		case <-connTicker.C:
 			checkConn()
 		case <-collTicker.C:
+			if !online {
+				continue
+			}
 			newColls, err := r.collFetcher.FetchCollections(ctx, h)
 			if err != nil {
 				r.logger.Sugar().Errorw("error while fetching collections", "host", string(h), "error", err)
-				break
+				continue
 			}
 			slices.Sort(newColls)
 			r.notifyCollsUpdate(ctx, h, colls, newColls)
