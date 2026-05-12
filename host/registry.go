@@ -27,8 +27,6 @@ type Registry struct {
 	providersWG sync.WaitGroup
 	monitorsWG  sync.WaitGroup
 
-	hosts map[Host]*Info
-
 	logger *zap.Logger
 }
 
@@ -57,13 +55,12 @@ func NewRegistry(
 ) *Registry {
 	return &Registry{
 		config:      config,
-		hosts:       make(map[Host]*Info),
-		monitors:    make(map[Host]context.CancelFunc),
-		logger:      logger.Named("Registry"),
-		providers:   providers,
-		observers:   observers,
 		connChecker: connChecker,
 		collFetcher: collFetcher,
+		providers:   providers,
+		observers:   observers,
+		monitors:    make(map[Host]context.CancelFunc),
+		logger:      logger.Named("Registry"),
 	}
 }
 
@@ -88,11 +85,17 @@ func (r *Registry) Run(ctx context.Context) error {
 }
 
 func (r *Registry) register(ctx context.Context, h Host) {
+	if _, ok := r.monitors[h]; ok {
+		return
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	r.monitors[h] = cancel
+
 	r.monitorsWG.Go(func() {
 		r.monitor(ctx, h)
 	})
 
-	r.nofityHostUp(ctx, h)
+	r.notifyHostUp(ctx, h)
 }
 
 func (r *Registry) deregister(ctx context.Context, h Host) {
@@ -100,32 +103,84 @@ func (r *Registry) deregister(ctx context.Context, h Host) {
 		cancel()
 		delete(r.monitors, h)
 
-		r.nofityHostDown(ctx, h)
+		r.notifyHostDown(ctx, h)
 	}
-
 }
 
 func (r *Registry) monitor(ctx context.Context, h Host) {
+	var (
+		online bool
+		colls  []string
+	)
 
+	connTicker := time.NewTicker(r.config.ConnCheckInterval)
+	collTicker := time.NewTicker(r.config.CollectionsRefreshInterval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-connTicker.C:
+			res := r.connChecker.CheckConnection(ctx, h)
+			if res.Online != online {
+				if res.Online == true {
+					r.notifyHostUp(ctx, h)
+				} else {
+					r.notifyHostDown(ctx, h)
+				}
+				online = res.Online
+			}
+		case <-collTicker.C:
+			newColls, err := r.collFetcher.FetchCollections(ctx, h)
+			if err != nil {
+				r.logger.Sugar().Errorw("error while fetching collections", "host", string(h), "error", err)
+				break
+			}
+			slices.Sort(newColls)
+			r.notifyCollsUpdate(ctx, h, colls, newColls)
+			colls = newColls
+		}
+	}
 }
 
-func (r *Registry) nofityHostUp(ctx context.Context, h Host) {
+func (r *Registry) notifyHostUp(ctx context.Context, h Host) {
 	for _, o := range r.observers {
 		select {
 		case <-ctx.Done():
-			break
+			return
 		default:
 			o.Up(h)
 		}
 	}
 }
-func (r *Registry) nofityHostDown(ctx context.Context, h Host) {
+func (r *Registry) notifyHostDown(ctx context.Context, h Host) {
 	for _, o := range r.observers {
 		select {
 		case <-ctx.Done():
-			break
+			return
 		default:
 			o.Down(h)
+		}
+	}
+}
+
+// notifyCollsUpdate compares oldColls with newCools, prepares a list of removed collections and list of added collections
+// It assumes that oldColls and newColls are sorted.
+func (r *Registry) notifyCollsUpdate(ctx context.Context, h Host, oldColls, newColls []string) {
+
+	added, removed := getSliceDiffs(oldColls, newColls)
+
+	for _, o := range r.observers {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if len(added) > 0 {
+				o.CollectionsAdded(h, added)
+			}
+			if len(removed) > 0 {
+				o.CollectionsRemoved(h, removed)
+			}
 		}
 	}
 }
@@ -140,128 +195,23 @@ func (r *Registry) Close() error {
 	return nil
 }
 
-// GetOnlineHosts returns information about all online hosts.
-func (r *Registry) GetOnlineHosts() map[Host]*Info {
-	online := make(map[Host]*Info)
-
-	for h, i := range r.hosts {
-		if i.GetOnline() {
-			online[h] = i
+func getSliceDiffs(prev, next []string) (added []string, removed []string) {
+	i, j := 0, 0
+	for i < len(prev) && j < len(next) {
+		switch {
+		case prev[i] < next[j]:
+			removed = append(removed, prev[i])
+			i++
+		case prev[i] > next[j]:
+			added = append(added, next[j])
+			j++
+		default:
+			i++
+			j++
 		}
 	}
-	return online
-}
+	removed = append(removed, prev[i:]...)
+	added = append(added, next[j:]...)
 
-func (r *Registry) startCollectionsWorker(ctx context.Context, h Host) {
-	if r.collFetcher == nil {
-		return
-	}
-	if _, running := r.monitors[h]; running {
-		return
-	}
-	//workerCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is invoked by stopCollectionsWorker
-	//r.collWorkers[h] = cancel
-	//r.errGroup.Go(func() error {
-	//	return r.collectionsWorker(workerCtx, h)
-	//})
-}
-
-func (r *Registry) stopCollectionsWorker(h Host) {
-	if cancel, ok := r.monitors[h]; ok {
-		cancel()
-		delete(r.monitors, h)
-	}
-}
-
-func (r *Registry) collectionsWorker(ctx context.Context, h Host) error {
-	r.fetchAndStoreCollections(ctx, h)
-
-	ticker := time.NewTicker(r.config.CollectionsRefreshInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return nil
-			}
-			return ctx.Err()
-		case <-ticker.C:
-			r.fetchAndStoreCollections(ctx, h)
-		}
-	}
-}
-
-func (r *Registry) fetchAndStoreCollections(ctx context.Context, h Host) {
-	names, err := r.collFetcher.FetchCollections(ctx, h)
-	if err != nil {
-		r.logger.Sugar().Debugw("collections fetch failed", "host", h, "error", err)
-		return
-	}
-	if info, ok := r.hosts[h]; ok {
-		info.SetCollections(names)
-	}
-}
-
-func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {
-	ticker := time.NewTicker(r.config.ConnCheckInterval)
-	for {
-		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return nil
-			}
-			return ctx.Err()
-		case <-ticker.C:
-			res := r.connChecker.CheckConnection(ctx, host)
-			if res.Online {
-				r.nofityHostUp(ctx, host)
-			} else {
-				r.nofityHostDown(ctx, host)
-			}
-		}
-	}
-}
-
-// Info holds host information in thread safe way.
-type Info struct {
-	online bool
-	// TODO(tzdybal): gather and use more information about hosts
-	collections []string
-
-	mtx sync.Mutex
-}
-
-// NewInfo creates new instance of Info object.
-func NewInfo() *Info {
-	return &Info{}
-}
-
-// SetOnline updates the online status, safe for concurrentuse.
-func (i *Info) SetOnline(o bool) {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-	i.online = o
-}
-
-// GetOnline returns online status, safe for concurrent use.
-func (i *Info) GetOnline() bool {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-	return i.online
-}
-
-// SetCollections sets the collections, safe for concurrent use.
-func (i *Info) SetCollections(collections []string) {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-
-	i.collections = collections
-}
-
-// GetCollections gets the collections, safe for concurrent use.
-func (i *Info) GetCollections() []string {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-
-	return slices.Clone(i.collections)
+	return
 }

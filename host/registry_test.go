@@ -2,6 +2,9 @@ package host
 
 import (
 	"context"
+	"maps"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +19,42 @@ var defaultConfig = Config{
 	CollectionsRefreshInterval: defaultInterval,
 }
 
+type mockObserver struct {
+	mtx   sync.Mutex
+	hosts map[Host]struct{}
+}
+
+var _ Observer = &mockObserver{}
+
+func newMockObserver() *mockObserver {
+	return &mockObserver{
+		hosts: make(map[Host]struct{}),
+	}
+}
+
+func (m *mockObserver) Up(h Host) {
+	m.mtx.Lock()
+	m.hosts[h] = struct{}{}
+	m.mtx.Unlock()
+}
+func (m *mockObserver) Down(h Host) {
+	m.mtx.Lock()
+	delete(m.hosts, h)
+	m.mtx.Unlock()
+}
+func (m *mockObserver) CollectionsAdded(_ Host, _ []string) {
+	// noop for now
+}
+func (m *mockObserver) CollectionsRemoved(_ Host, _ []string) {
+	// noop for now
+}
+
+func (m *mockObserver) hostList() []Host {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	return slices.Collect(maps.Keys(m.hosts))
+}
+
 func TestNewRegistry(t *testing.T) {
 	t.Parallel()
 	logger, err := zap.NewDevelopment()
@@ -23,7 +62,6 @@ func TestNewRegistry(t *testing.T) {
 	providers := make([]Provider, 10)
 	reg := NewRegistry(defaultConfig, providers, nil, nil, nil, logger)
 	require.NotNil(t, reg)
-	require.NotNil(t, reg.hosts)
 	require.NotEmpty(t, reg.providers)
 }
 
@@ -44,7 +82,9 @@ func TestRegistryStartStop(t *testing.T) {
 		provider.SetLogger(logger)
 	}
 
-	reg := NewRegistry(defaultConfig, providers, nil, nil, nil, logger)
+	observer := newMockObserver()
+
+	reg := NewRegistry(defaultConfig, providers, []Observer{observer}, nil, nil, logger)
 	require.NotNil(t, reg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -53,9 +93,104 @@ func TestRegistryStartStop(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		return len(reg.hosts) == 5
+		return len(observer.hostList()) == 5
 	}, 200*time.Millisecond, 10*time.Millisecond)
 
 	err = reg.Close()
 	require.NoError(t, err)
+}
+
+func TestGetSliceDiffs(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name           string
+		old, next      []string
+		expectedAdds   []string
+		expectedRmoves []string
+	}{
+		{
+			name: "both empty",
+			old:  []string{},
+			next: []string{},
+		},
+		{
+			name:         "old empty, all added",
+			old:          []string{},
+			next:         []string{"bar", "foo"},
+			expectedAdds: []string{"bar", "foo"},
+		},
+		{
+			name:           "next empty, all removed",
+			old:            []string{"bar", "foo"},
+			next:           []string{},
+			expectedRmoves: []string{"bar", "foo"},
+		},
+		{
+			name:         "add one",
+			old:          []string{"foo", "bar"},
+			next:         []string{"foo", "bar", "baz"},
+			expectedAdds: []string{"baz"},
+		},
+		{
+			name: "no change",
+			old:  []string{"foo", "bar"},
+			next: []string{"foo", "bar"},
+		},
+		{
+			name:           "remove one",
+			old:            []string{"bar", "baz", "foo"},
+			next:           []string{"bar", "foo"},
+			expectedRmoves: []string{"baz"},
+		},
+		{
+			name:           "adds and removals",
+			old:            []string{"bar", "foo"},
+			next:           []string{"baz", "qux"},
+			expectedAdds:   []string{"baz", "qux"},
+			expectedRmoves: []string{"bar", "foo"},
+		},
+		{
+			name:         "add in front",
+			old:          []string{"foo"},
+			next:         []string{"bar", "baz", "foo"},
+			expectedAdds: []string{"bar", "baz"},
+		},
+		{
+			name:         "add at back",
+			old:          []string{"bar"},
+			next:         []string{"bar", "foo", "qux"},
+			expectedAdds: []string{"foo", "qux"},
+		},
+		{
+			name:           "remove from front",
+			old:            []string{"bar", "baz", "foo"},
+			next:           []string{"foo"},
+			expectedRmoves: []string{"bar", "baz"},
+		},
+		{
+			name:           "remove from back",
+			old:            []string{"bar", "foo", "qux"},
+			next:           []string{"bar"},
+			expectedRmoves: []string{"foo", "qux"},
+		},
+		{
+			name:           "mixed adds, removes, and unchanged",
+			old:            []string{"alpha", "bravo", "delta", "echo", "golf", "hotel"},
+			next:           []string{"alpha", "charlie", "delta", "foxtrot", "golf", "india"},
+			expectedAdds:   []string{"charlie", "foxtrot", "india"},
+			expectedRmoves: []string{"bravo", "echo", "hotel"},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			slices.Sort(c.old)
+			slices.Sort(c.next)
+			adds, removes := getSliceDiffs(c.old, c.next)
+
+			require.Equal(t, c.expectedAdds, adds)
+			require.Equal(t, c.expectedRmoves, removes)
+		})
+	}
 }
