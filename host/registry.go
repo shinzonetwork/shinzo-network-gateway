@@ -10,19 +10,34 @@ import (
 	"go.uber.org/zap"
 )
 
+// Host is the address (e.g. URL) of a network host.
+type Host string
+
 // Registry tracks known hosts and their connectivity status.
 type Registry struct {
 	config Config
-	events chan Event
 
-	providers   []Provider
 	connChecker ConnectionChecker
 	collFetcher CollectionsFetcher
-	hosts       map[Host]*Info
 
-	collWorkers map[Host]context.CancelFunc
+	observers []Observer
+	providers []Provider
+	monitors  map[Host]context.CancelFunc
+
+	providersWG sync.WaitGroup
+	monitorsWG  sync.WaitGroup
+
+	hosts map[Host]*Info
 
 	logger *zap.Logger
+}
+
+// Observer defines callbacks called by registry when host information is updated.
+type Observer interface {
+	Up(Host)
+	Down(Host)
+	CollectionsAdded(Host, []string)
+	CollectionsRemoved(Host, []string)
 }
 
 // Config holds configuration for the Registry.
@@ -35,17 +50,18 @@ type Config struct {
 func NewRegistry(
 	config Config,
 	providers []Provider,
+	observers []Observer,
 	connChecker ConnectionChecker,
 	collFetcher CollectionsFetcher,
 	logger *zap.Logger,
 ) *Registry {
 	return &Registry{
 		config:      config,
-		events:      make(chan Event),
 		hosts:       make(map[Host]*Info),
-		collWorkers: make(map[Host]context.CancelFunc),
+		monitors:    make(map[Host]context.CancelFunc),
 		logger:      logger.Named("Registry"),
 		providers:   providers,
+		observers:   observers,
 		connChecker: connChecker,
 		collFetcher: collFetcher,
 	}
@@ -56,9 +72,8 @@ func (r *Registry) Run(ctx context.Context) error {
 	register := func(h Host) { r.register(ctx, h) }
 	deregister := func(h Host) { r.deregister(ctx, h) }
 
-	wg := sync.WaitGroup{}
 	for _, provider := range r.providers {
-		wg.Go(func() {
+		r.providersWG.Go(func() {
 			if err := provider.Run(ctx, register, deregister); err != nil && !errors.Is(err, context.Canceled) {
 				r.logger.Sugar().Errorw("provider exited", "error", err)
 			}
@@ -66,16 +81,53 @@ func (r *Registry) Run(ctx context.Context) error {
 	}
 
 	<-ctx.Done()
-	wg.Wait()
+	// wait for providers first to make sure monitors are not started anymore
+	r.providersWG.Wait()
+	r.monitorsWG.Wait()
 	return nil
 }
 
 func (r *Registry) register(ctx context.Context, h Host) {
+	r.monitorsWG.Go(func() {
+		r.monitor(ctx, h)
+	})
 
+	r.nofityHostUp(ctx, h)
 }
 
 func (r *Registry) deregister(ctx context.Context, h Host) {
+	if cancel, ok := r.monitors[h]; ok {
+		cancel()
+		delete(r.monitors, h)
 
+		r.nofityHostDown(ctx, h)
+	}
+
+}
+
+func (r *Registry) monitor(ctx context.Context, h Host) {
+
+}
+
+func (r *Registry) nofityHostUp(ctx context.Context, h Host) {
+	for _, o := range r.observers {
+		select {
+		case <-ctx.Done():
+			break
+		default:
+			o.Up(h)
+		}
+	}
+}
+func (r *Registry) nofityHostDown(ctx context.Context, h Host) {
+	for _, o := range r.observers {
+		select {
+		case <-ctx.Done():
+			break
+		default:
+			o.Down(h)
+		}
+	}
 }
 
 // Wait blocks until all internal goroutines have stopped and returns the first non-nil error.
@@ -100,57 +152,11 @@ func (r *Registry) GetOnlineHosts() map[Host]*Info {
 	return online
 }
 
-func (r *Registry) eventLoop(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return nil
-			}
-			return ctx.Err()
-		case e := <-r.events:
-			err := r.handle(ctx, e)
-			if err != nil {
-				r.logger.Sugar().Debugw("error while handling event", "error", err)
-			}
-		}
-	}
-}
-
-func (r *Registry) handle(ctx context.Context, e Event) error {
-	r.logger.Sugar().Debugw("event received", "event", e)
-	switch e.Type {
-	case HostRegistered:
-		_, found := r.hosts[e.Host]
-		if found {
-			r.logger.Sugar().Infow("host already registered", "address", e.Host)
-			return nil
-		}
-		r.hosts[e.Host] = &Info{}
-		// r.errGroup.Go(func() error {
-		//	return r.connCheckerWorker(ctx, e.Host)
-		//})
-	case HostDeregistered:
-		// TODO(tzdybal): stop connection checker worker!
-		r.stopCollectionsWorker(e.Host)
-		delete(r.hosts, e.Host)
-	case HostOnline:
-		r.hosts[e.Host].SetOnline(true)
-		r.startCollectionsWorker(ctx, e.Host)
-	case HostOffline:
-		r.hosts[e.Host].SetOnline(false)
-		r.stopCollectionsWorker(e.Host)
-	default:
-		r.logger.Sugar().Errorw("unknown event type", "type", e.Type)
-	}
-	return nil
-}
-
 func (r *Registry) startCollectionsWorker(ctx context.Context, h Host) {
 	if r.collFetcher == nil {
 		return
 	}
-	if _, running := r.collWorkers[h]; running {
+	if _, running := r.monitors[h]; running {
 		return
 	}
 	//workerCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is invoked by stopCollectionsWorker
@@ -161,9 +167,9 @@ func (r *Registry) startCollectionsWorker(ctx context.Context, h Host) {
 }
 
 func (r *Registry) stopCollectionsWorker(h Host) {
-	if cancel, ok := r.collWorkers[h]; ok {
+	if cancel, ok := r.monitors[h]; ok {
 		cancel()
-		delete(r.collWorkers, h)
+		delete(r.monitors, h)
 	}
 }
 
@@ -207,35 +213,14 @@ func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {
 			return ctx.Err()
 		case <-ticker.C:
 			res := r.connChecker.CheckConnection(ctx, host)
-			t := HostOnline
-			if !res.Online {
-				t = HostOffline
-				// TODO(tzdybal): exponential backoff?
+			if res.Online {
+				r.nofityHostUp(ctx, host)
+			} else {
+				r.nofityHostDown(ctx, host)
 			}
-			r.events <- Event{Type: t, Host: host}
 		}
 	}
 }
-
-// Event represents a host lifecycle or connectivity change.
-type Event struct {
-	Type EventType
-	Host Host
-}
-
-// Host is the address (e.g. URL) of a network host.
-type Host string
-
-// EventType identifies the kind of host event.
-type EventType int
-
-// Host event types.
-const (
-	HostRegistered   EventType = iota // host was registered in Shinzo Network
-	HostDeregistered                  // host was deregistered from Shinzo Network
-	HostOnline                        // host is reachable
-	HostOffline                       // host is unreachable
-)
 
 // Info holds host information in thread safe way.
 type Info struct {

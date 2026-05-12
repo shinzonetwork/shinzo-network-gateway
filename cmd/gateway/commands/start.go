@@ -52,6 +52,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 			CollectionsRefreshInterval: defaultCollectionsInterval,
 		},
 		[]host.Provider{provider},
+		[]host.Observer{},
 		connChecker,
 		collFetcher,
 		logger,
