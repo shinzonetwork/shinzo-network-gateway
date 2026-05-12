@@ -57,7 +57,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 		logger,
 	)
 
-	err = registry.Start(cmd.Context())
+	err = registry.Run(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("error while starting host registry: %w", err)
 	}

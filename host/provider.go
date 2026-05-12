@@ -10,7 +10,7 @@ import (
 
 // Provider supplies host registration events to the Registry.
 type Provider interface {
-	Start(ctx context.Context, register func(Host), deregister func(Host)) error
+	Run(ctx context.Context, register func(Host), deregister func(Host)) error
 
 	SetLogger(logger *zap.Logger)
 }
@@ -31,8 +31,8 @@ func NewFileProvider(filename string) *FileProvider {
 	}
 }
 
-// Start reads the host file and sends a HostRegistered event for each line.
-func (p *FileProvider) Start(ctx context.Context, register func(Host), deregister func(Host)) error {
+// Run reads the host file and sends a HostRegistered event for each line.
+func (p *FileProvider) Run(ctx context.Context, register func(Host), deregister func(Host)) error {
 	p.logger.Sugar().Debugw("opening host file", "path", p.filename)
 	f, err := os.Open(p.filename)
 	if err != nil {

@@ -50,7 +50,7 @@ func TestRegistryStartStop(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	err = reg.Start(ctx)
+	err = reg.Run(ctx)
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {

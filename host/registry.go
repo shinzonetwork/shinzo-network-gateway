@@ -51,15 +51,15 @@ func NewRegistry(
 	}
 }
 
-// Start launches all providers and begins processing host events.
-func (r *Registry) Start(ctx context.Context) error {
+// Run launches all providers and begins processing host events.
+func (r *Registry) Run(ctx context.Context) error {
 	register := func(h Host) { r.register(ctx, h) }
 	deregister := func(h Host) { r.deregister(ctx, h) }
 
 	wg := sync.WaitGroup{}
 	for _, provider := range r.providers {
 		wg.Go(func() {
-			if err := provider.Start(ctx, register, deregister); !errors.Is(err, context.Canceled) {
+			if err := provider.Run(ctx, register, deregister); !errors.Is(err, context.Canceled) {
 				r.logger.Sugar().Error("provider exited", "error", err)
 			}
 		})

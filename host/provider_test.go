@@ -24,7 +24,7 @@ func NewMockProvider(initialHosts []Host) *MockProvider {
 
 var _ Provider = &MockProvider{}
 
-func (mock *MockProvider) Start(ctx context.Context, register func(Host), _ func(Host)) error {
+func (mock *MockProvider) Run(ctx context.Context, register func(Host), _ func(Host)) error {
 	for _, h := range mock.hosts {
 		select {
 		case <-ctx.Done():
@@ -56,7 +56,7 @@ func TestFileProvider(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	err = p.Start(ctx, register, nil)
+	err = p.Run(ctx, register, nil)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return cnt > 1 }, 1*time.Second, 50*time.Millisecond)
 }
