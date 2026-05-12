@@ -103,12 +103,9 @@ func (r *Registry) register(ctx context.Context, h Host) {
 
 func (r *Registry) deregister(ctx context.Context, h Host) {
 	r.mtx.Lock()
+	defer r.mtx.Unlock()
 	if cancel, ok := r.monitors[h]; ok {
 		cancel()
-		delete(r.monitors, h)
-		r.mtx.Unlock()
-
-		r.notifyHostDown(ctx, h)
 	}
 }
 
@@ -122,15 +119,15 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 		res := r.connChecker.CheckConnection(ctx, h)
 		if res.Online != online {
 			if res.Online {
-				r.notifyHostUp(ctx, h)
+				r.notifyHostUp(h)
 			} else {
-				r.notifyHostDown(ctx, h)
+				r.notifyHostDown(h)
 			}
 			online = res.Online
 		}
 	}
 
-	// start checking status imediatelly
+	// start checking status immediately
 	checkConn()
 
 	connTicker := time.NewTicker(r.config.ConnCheckInterval)
@@ -141,6 +138,11 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 	for {
 		select {
 		case <-ctx.Done():
+			delete(r.monitors, h)
+			if online {
+				r.notifyCollsUpdate(h, colls, nil)
+				r.notifyHostDown(h)
+			}
 			return
 		case <-connTicker.C:
 			checkConn()
@@ -154,50 +156,35 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 				continue
 			}
 			slices.Sort(newColls)
-			r.notifyCollsUpdate(ctx, h, colls, newColls)
+			r.notifyCollsUpdate(h, colls, newColls)
 			colls = newColls
 		}
 	}
 }
 
-func (r *Registry) notifyHostUp(ctx context.Context, h Host) {
+func (r *Registry) notifyHostUp(h Host) {
 	for _, o := range r.observers {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			o.Up(h)
-		}
+		o.Up(h)
 	}
 }
 
-func (r *Registry) notifyHostDown(ctx context.Context, h Host) {
+func (r *Registry) notifyHostDown(h Host) {
 	for _, o := range r.observers {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			o.Down(h)
-		}
+		o.Down(h)
 	}
 }
 
 // notifyCollsUpdate compares oldColls with newCools, prepares a list of removed collections and list of added collections
 // It assumes that oldColls and newColls are sorted.
-func (r *Registry) notifyCollsUpdate(ctx context.Context, h Host, oldColls, newColls []string) {
+func (r *Registry) notifyCollsUpdate(h Host, oldColls, newColls []string) {
 	added, removed := getSliceDiffs(oldColls, newColls)
 
 	for _, o := range r.observers {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			if len(added) > 0 {
-				o.CollectionsAdded(h, added)
-			}
-			if len(removed) > 0 {
-				o.CollectionsRemoved(h, removed)
-			}
+		if len(added) > 0 {
+			o.CollectionsAdded(h, added)
+		}
+		if len(removed) > 0 {
+			o.CollectionsRemoved(h, removed)
 		}
 	}
 }

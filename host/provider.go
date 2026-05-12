@@ -15,7 +15,7 @@ type Provider interface {
 	SetLogger(logger *zap.Logger)
 }
 
-// FileProvider reads hosts line-by-line from a file and emits HostRegistered events.
+// FileProvider reads hosts line-by-line from a file and calls register callback.
 type FileProvider struct {
 	filename string
 
