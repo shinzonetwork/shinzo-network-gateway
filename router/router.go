@@ -27,12 +27,15 @@ type Router struct {
 	registry *host.Registry
 
 	pools map[string]*pool
-	mtx   sync.Mutex
+	mtx   sync.RWMutex
 
 	logger *zap.Logger
 }
 
-var _ endpoint.HostsSelector = &Router{}
+var (
+	_ endpoint.HostsSelector = &Router{}
+	_ host.Observer          = &Router{}
+)
 
 // New creates new instance of Router.
 func New(registry *host.Registry, logger *zap.Logger) *Router {
@@ -51,23 +54,10 @@ func (r *Router) SelectHosts(_ context.Context, collections []string) ([]host.Ho
 		return nil, ErrPoolNotSupported
 	}
 
-	// TODO(tzdybal): this is absolutely not efficient, but needs bigger refactoring
-	hosts := r.registry.GetOnlineHosts()
-	for h, i := range hosts {
-		for _, c := range i.GetCollections() {
-			pool, ok := r.pools[c]
-			if !ok {
-				pool = newPool(c, nil, r.logger)
-				r.pools[c] = pool
-			}
-			pool.add(h)
-		}
-	}
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
 
 	col := collections[0]
-	r.logger.Sugar().Debugf("searching for a pool for collection: %s", col)
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
 	pool, ok := r.pools[col]
 	if !ok {
 		return nil, ErrPoolNotFound
@@ -76,4 +66,40 @@ func (r *Router) SelectHosts(_ context.Context, collections []string) ([]host.Ho
 	// return configured number of hosts, or all of them
 	l := min(sampleSize, len(pool.hosts.Pool()))
 	return pool.get(l)
+}
+
+func (r *Router) Up(_ host.Host) {
+	// no-op
+}
+
+func (r *Router) Down(h host.Host) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	for _, p := range r.pools {
+		p.remove(h)
+	}
+}
+
+func (r *Router) CollectionsAdded(h host.Host, colls []string) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	for _, c := range colls {
+		p, ok := r.pools[c]
+		if !ok {
+			p = newPool(c, nil, r.logger)
+			r.pools[c] = p
+		}
+		p.add(h)
+	}
+}
+
+func (r *Router) CollectionsRemoved(h host.Host, colls []string) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	for _, c := range colls {
+		if p, ok := r.pools[c]; ok {
+			p.remove(h)
+		}
+	}
 }

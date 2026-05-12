@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Provider supplies host registration events to the Registry.
+// Provider calls register and deregister callbacks to notify when hosts are registered/deregistered.
 type Provider interface {
 	Run(ctx context.Context, register func(Host), deregister func(Host)) error
 

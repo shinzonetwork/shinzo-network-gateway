@@ -64,6 +64,12 @@ func (*mockConnChecker) CheckConnection(_ context.Context, _ Host) ConnectionSta
 	return ConnectionStatus{Online: true}
 }
 
+type mockCollFetcher struct{}
+
+func (*mockCollFetcher) FetchCollections(_ context.Context, _ Host) ([]string, error) {
+	return nil, nil
+}
+
 func TestNewRegistry(t *testing.T) {
 	t.Parallel()
 	logger, err := zap.NewDevelopment()
@@ -93,7 +99,7 @@ func TestRegistryStartStop(t *testing.T) {
 
 	observer := newMockObserver()
 
-	reg := NewRegistry(defaultConfig, providers, []Observer{observer}, &mockConnChecker{}, nil, logger)
+	reg := NewRegistry(defaultConfig, providers, []Observer{observer}, &mockConnChecker{}, &mockCollFetcher{}, logger)
 	require.NotNil(t, reg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)

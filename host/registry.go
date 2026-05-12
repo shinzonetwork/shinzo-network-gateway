@@ -101,10 +101,11 @@ func (r *Registry) register(ctx context.Context, h Host) {
 	})
 }
 
-func (r *Registry) deregister(ctx context.Context, h Host) {
+func (r *Registry) deregister(_ context.Context, h Host) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	if cancel, ok := r.monitors[h]; ok {
+		delete(r.monitors, h)
 		cancel()
 	}
 }
@@ -115,11 +116,24 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 		colls  []string
 	)
 
+	checkColls := func() {
+		newColls, err := r.collFetcher.FetchCollections(ctx, h)
+		if err != nil {
+			r.logger.Sugar().Errorw("error while fetching collections", "host", string(h), "error", err)
+			return
+		}
+		slices.Sort(newColls)
+		r.notifyCollsUpdate(h, colls, newColls)
+		colls = newColls
+	}
+
 	checkConn := func() {
 		res := r.connChecker.CheckConnection(ctx, h)
 		if res.Online != online {
 			if res.Online {
 				r.notifyHostUp(h)
+				// fetch collections immediately
+				checkColls()
 			} else {
 				r.notifyHostDown(h)
 			}
@@ -138,7 +152,6 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 	for {
 		select {
 		case <-ctx.Done():
-			delete(r.monitors, h)
 			if online {
 				r.notifyCollsUpdate(h, colls, nil)
 				r.notifyHostDown(h)
@@ -147,17 +160,9 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 		case <-connTicker.C:
 			checkConn()
 		case <-collTicker.C:
-			if !online {
-				continue
+			if online {
+				checkColls()
 			}
-			newColls, err := r.collFetcher.FetchCollections(ctx, h)
-			if err != nil {
-				r.logger.Sugar().Errorw("error while fetching collections", "host", string(h), "error", err)
-				continue
-			}
-			slices.Sort(newColls)
-			r.notifyCollsUpdate(h, colls, newColls)
-			colls = newColls
 		}
 	}
 }
