@@ -24,8 +24,6 @@ var (
 
 // Router selects the hosts for query based on information from Registry.
 type Router struct {
-	registry *host.Registry
-
 	pools map[string]*pool
 	mtx   sync.RWMutex
 
@@ -38,11 +36,10 @@ var (
 )
 
 // New creates new instance of Router.
-func New(registry *host.Registry, logger *zap.Logger) *Router {
+func New(logger *zap.Logger) *Router {
 	r := &Router{
-		registry: registry,
-		pools:    make(map[string]*pool),
-		logger:   logger.Named("Router"),
+		pools:  make(map[string]*pool),
+		logger: logger.Named("Router"),
 	}
 
 	return r
