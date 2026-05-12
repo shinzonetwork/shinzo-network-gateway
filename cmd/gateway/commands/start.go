@@ -18,7 +18,7 @@ import (
 	"github.com/shinzonetwork/shinzo-network-gateway/router"
 )
 
-const shutdownTimeout = 10 * time.Second
+const shutdownTimeout = 30 * time.Second
 
 func (a *App) newStartCmd() (*cobra.Command, error) {
 	cmd := &cobra.Command{
@@ -85,7 +85,8 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	})
 	grp.Go(func() error {
 		<-ctx.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		// parent ctx is already cancelled here; derive a fresh deadline for graceful shutdown
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 		defer cancel()
 		return endp.Close(ctx)
 	})

@@ -34,10 +34,10 @@ type Registry struct {
 
 // Observer defines callbacks called by registry when host information is updated.
 type Observer interface {
-	Up(Host)
-	Down(Host)
-	CollectionsAdded(Host, []string)
-	CollectionsRemoved(Host, []string)
+	Up(host Host)
+	Down(host Host)
+	CollectionsAdded(host Host, collections []string)
+	CollectionsRemoved(host Host, collections []string)
 }
 
 // Config holds configuration for the Registry.
@@ -92,7 +92,7 @@ func (r *Registry) register(ctx context.Context, h Host) {
 		r.mtx.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx) //nolint:gosec // false positive, fixed recently: https://github.com/securego/gosec/commit/e354c572d957eb8bf63481cc9ba2704b58a6ae35
 	r.monitors[h] = cancel
 	r.mtx.Unlock()
 

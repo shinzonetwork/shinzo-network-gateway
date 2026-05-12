@@ -65,10 +65,12 @@ func (r *Router) SelectHosts(_ context.Context, collections []string) ([]host.Ho
 	return pool.get(l)
 }
 
+// Up implements host.Observer; the Router does not track hosts until they advertise collections.
 func (r *Router) Up(_ host.Host) {
 	// no-op
 }
 
+// Down implements host.Observer by removing the host from every pool it belongs to.
 func (r *Router) Down(h host.Host) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -77,6 +79,7 @@ func (r *Router) Down(h host.Host) {
 	}
 }
 
+// CollectionsAdded implements host.Observer by adding the host to the pool for each given collection.
 func (r *Router) CollectionsAdded(h host.Host, colls []string) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
@@ -91,6 +94,7 @@ func (r *Router) CollectionsAdded(h host.Host, colls []string) {
 	}
 }
 
+// CollectionsRemoved implements host.Observer by removing the host from the pool for each given collection.
 func (r *Router) CollectionsRemoved(h host.Host, colls []string) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()

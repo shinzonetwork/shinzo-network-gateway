@@ -32,7 +32,7 @@ func NewFileProvider(filename string) *FileProvider {
 }
 
 // Run reads the host file and sends a HostRegistered event for each line.
-func (p *FileProvider) Run(ctx context.Context, register func(Host), deregister func(Host)) error {
+func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host)) error {
 	p.logger.Sugar().Debugw("opening host file", "path", p.filename)
 	f, err := os.Open(p.filename)
 	if err != nil {
