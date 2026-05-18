@@ -97,7 +97,9 @@ func (r *Registry) register(ctx context.Context, h Host) {
 	r.mtx.Unlock()
 
 	r.monitorsWG.Go(func() {
-		r.monitor(ctx, h)
+		m := newMonitor(h, r.connChecker, r.collFetcher, r.observers, r.logger)
+
+		m.run(ctx, r.config.ConnCheckInterval, r.config.CollectionsRefreshInterval)
 	})
 }
 
@@ -110,88 +112,105 @@ func (r *Registry) deregister(_ context.Context, h Host) {
 	}
 }
 
-func (r *Registry) monitor(ctx context.Context, h Host) {
-	var (
-		online bool
-		colls  []string
-	)
+type monitor struct {
+	h      Host
+	online bool
+	colls  []string
 
-	checkColls := func() {
-		newColls, err := r.collFetcher.FetchCollections(ctx, h)
-		if err != nil {
-			r.logger.Sugar().Errorw("error while fetching collections", "host", string(h), "error", err)
-			return
-		}
-		slices.Sort(newColls)
-		r.notifyCollsUpdate(h, colls, newColls)
-		colls = newColls
+	connChecker ConnectionChecker
+	collFetcher CollectionsFetcher
+	observers   []Observer
+
+	logger *zap.Logger
+}
+
+func newMonitor(h Host, connChecker ConnectionChecker, collFetcher CollectionsFetcher, observers []Observer, logger *zap.Logger) *monitor {
+	return &monitor{
+		h:           h,
+		connChecker: connChecker,
+		collFetcher: collFetcher,
+		observers:   observers,
+		logger:      logger.With(zap.String("host", string(h))),
 	}
+}
 
-	checkConn := func() {
-		res := r.connChecker.CheckConnection(ctx, h)
-		if res.Online != online {
-			if res.Online {
-				r.notifyHostUp(h)
-				// fetch collections immediately
-				checkColls()
-			} else {
-				r.notifyCollsUpdate(h, colls, nil)
-				r.notifyHostDown(h)
-				colls = nil
-			}
-			online = res.Online
-		}
+func (m *monitor) checkColls(ctx context.Context) {
+	newColls, err := m.collFetcher.FetchCollections(ctx, m.h)
+	if err != nil {
+		m.logger.Sugar().Errorw("error while fetching collections", "error", err)
+		return
 	}
+	slices.Sort(newColls)
+	m.notifyCollsUpdate(m.colls, newColls)
+	m.colls = newColls
+}
 
+func (m *monitor) checkConn(ctx context.Context) {
+	res := m.connChecker.CheckConnection(ctx, m.h)
+	if res.Online != m.online {
+		if res.Online {
+			m.notifyHostUp()
+			// fetch collections immediately
+			m.checkColls(ctx)
+		} else {
+			m.notifyCollsUpdate(m.colls, nil)
+			m.notifyHostDown()
+			m.colls = nil
+		}
+		m.online = res.Online
+	}
+}
+
+func (m *monitor) run(ctx context.Context, connCheckInterval, collectionsRefreshInterval time.Duration) {
 	// start checking status immediately
-	checkConn()
+	m.checkConn(ctx)
 
-	connTicker := time.NewTicker(r.config.ConnCheckInterval)
+	connTicker := time.NewTicker(connCheckInterval)
 	defer connTicker.Stop()
-	collTicker := time.NewTicker(r.config.CollectionsRefreshInterval)
+	collTicker := time.NewTicker(collectionsRefreshInterval)
 	defer collTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			if online {
-				r.notifyCollsUpdate(h, colls, nil)
-				r.notifyHostDown(h)
+			if m.online {
+				m.notifyCollsUpdate(m.colls, nil)
+				m.notifyHostDown()
 			}
 			return
 		case <-connTicker.C:
-			checkConn()
+			m.checkConn(ctx)
 		case <-collTicker.C:
-			if online {
-				checkColls()
+			if m.online {
+				m.checkColls(ctx)
 			}
 		}
 	}
 }
 
-func (r *Registry) notifyHostUp(h Host) {
-	for _, o := range r.observers {
-		o.Up(h)
+func (m *monitor) notifyHostUp() {
+	for _, o := range m.observers {
+		o.Up(m.h)
 	}
 }
 
-func (r *Registry) notifyHostDown(h Host) {
-	for _, o := range r.observers {
-		o.Down(h)
+func (m *monitor) notifyHostDown() {
+	for _, o := range m.observers {
+		o.Down(m.h)
 	}
 }
 
 // notifyCollsUpdate compares oldColls with newCools, prepares a list of removed collections and list of added collections
 // It assumes that oldColls and newColls are sorted.
-func (r *Registry) notifyCollsUpdate(h Host, oldColls, newColls []string) {
+func (m *monitor) notifyCollsUpdate(oldColls, newColls []string) {
 	added, removed := getSliceDiffs(oldColls, newColls)
 
-	for _, o := range r.observers {
+	for _, o := range m.observers {
 		if len(added) > 0 {
-			o.CollectionsAdded(h, added)
+			o.CollectionsAdded(m.h, added)
 		}
 		if len(removed) > 0 {
-			o.CollectionsRemoved(h, removed)
+			o.CollectionsRemoved(m.h, removed)
 		}
 	}
 }
