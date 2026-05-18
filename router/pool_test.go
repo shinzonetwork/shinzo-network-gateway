@@ -17,6 +17,7 @@ func TestPool(t *testing.T) {
 		add      []host.Host
 		remove   []host.Host
 		expected []host.Host
+		expErr   error
 	}{
 		{
 			name:     "simple add",
@@ -75,10 +76,10 @@ func TestPool(t *testing.T) {
 			expected: []host.Host{"host3"},
 		},
 		{
-			name:     "remove all",
-			initial:  []host.Host{"host1", "host2", "host3"},
-			remove:   []host.Host{"host1", "host2", "host3"},
-			expected: []host.Host{},
+			name:    "remove all",
+			initial: []host.Host{"host1", "host2", "host3"},
+			remove:  []host.Host{"host1", "host2", "host3"},
+			expErr:  ErrNoHostsAvailable,
 		},
 		{
 			name:     "start empty",
@@ -109,8 +110,13 @@ func TestPool(t *testing.T) {
 			}
 
 			actual, err := pool.get(len(c.expected))
-			require.NoError(t, err)
-			require.ElementsMatch(t, c.expected, actual)
+			if c.expErr != nil {
+				require.ErrorIs(t, err, ErrNoHostsAvailable)
+				require.Nil(t, actual)
+			} else {
+				require.NoError(t, err)
+				require.ElementsMatch(t, c.expected, actual)
+			}
 			require.Len(t, pool.hosts.Pool(), len(c.expected))
 		})
 	}
