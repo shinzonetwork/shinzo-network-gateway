@@ -132,6 +132,9 @@ func TestGetSliceDiffs(t *testing.T) {
 			next: []string{},
 		},
 		{
+			name: "both nil",
+		},
+		{
 			name:         "old empty, all added",
 			old:          []string{},
 			next:         []string{"bar", "foo"},
