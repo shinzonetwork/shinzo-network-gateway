@@ -212,3 +212,44 @@ func TestGetSliceDiffs(t *testing.T) {
 		})
 	}
 }
+
+func TestDeregisterUnknownHost(t *testing.T) {
+	t.Parallel()
+	logger, _ := zap.NewDevelopment()
+	reg := NewRegistry(defaultConfig, nil, nil, &mockConnChecker{}, &mockCollFetcher{}, logger)
+	require.NotNil(t, reg)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	require.NotPanics(t, func() { reg.deregister(ctx, Host("never.registered")) })
+}
+
+func TestDuplicateHostRegistration(t *testing.T) {
+	t.Parallel()
+	logger, _ := zap.NewDevelopment()
+	observer := newMockObserver()
+	// both providers advertise the same host
+	providers := []Provider{
+		NewMockProvider([]Host{"duplicate.host"}),
+		NewMockProvider([]Host{"duplicate.host"}),
+	}
+	for _, p := range providers {
+		p.SetLogger(logger)
+	}
+
+	reg := NewRegistry(defaultConfig, providers, []Observer{observer}, &mockConnChecker{}, &mockCollFetcher{}, logger)
+	require.NotNil(t, reg)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go func() {
+		err := reg.Run(ctx)
+		require.NoError(t, err)
+	}()
+
+	require.Eventually(t, func() bool {
+		reg.mtx.Lock()
+		defer reg.mtx.Unlock()
+		return len(reg.monitors) == 1 // dedup: only one monitor
+	}, 300*time.Millisecond, 10*time.Millisecond)
+
+	require.Len(t, reg.monitors, 1) // make sure it's still 1
+}
