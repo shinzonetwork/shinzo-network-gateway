@@ -8,25 +8,36 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
+
+// Host is the address (e.g. URL) of a network host.
+type Host string
 
 // Registry tracks known hosts and their connectivity status.
 type Registry struct {
 	config Config
-	events chan Event
 
-	providers   []Provider
 	connChecker ConnectionChecker
 	collFetcher CollectionsFetcher
-	hosts       map[Host]*Info
 
-	collWorkers map[Host]context.CancelFunc
+	observers []Observer
+	providers []Provider
 
-	cancel   context.CancelFunc
-	errGroup *errgroup.Group
+	mtx      sync.Mutex
+	monitors map[Host]context.CancelFunc
+
+	providersWG sync.WaitGroup
+	monitorsWG  sync.WaitGroup
 
 	logger *zap.Logger
+}
+
+// Observer defines callbacks called by registry when host information is updated.
+type Observer interface {
+	Up(host Host)
+	Down(host Host)
+	CollectionsAdded(host Host, collections []string)
+	CollectionsRemoved(host Host, collections []string)
 }
 
 // Config holds configuration for the Registry.
@@ -39,244 +50,167 @@ type Config struct {
 func NewRegistry(
 	config Config,
 	providers []Provider,
+	observers []Observer,
 	connChecker ConnectionChecker,
 	collFetcher CollectionsFetcher,
 	logger *zap.Logger,
 ) *Registry {
 	return &Registry{
 		config:      config,
-		events:      make(chan Event),
-		hosts:       make(map[Host]*Info),
-		collWorkers: make(map[Host]context.CancelFunc),
-		logger:      logger.Named("Registry"),
-		providers:   providers,
 		connChecker: connChecker,
 		collFetcher: collFetcher,
+		providers:   providers,
+		observers:   observers,
+		monitors:    make(map[Host]context.CancelFunc),
+		logger:      logger.Named("Registry"),
 	}
 }
 
-// Start launches all providers and begins processing host events.
-func (r *Registry) Start(ctx context.Context) error {
-	ctx, r.cancel = context.WithCancel(ctx)
-	r.errGroup, ctx = errgroup.WithContext(ctx)
-
-	r.errGroup.Go(func() error {
-		return r.eventLoop(ctx)
-	})
+// Run launches all providers and begins processing host events.
+func (r *Registry) Run(ctx context.Context) error {
+	register := func(h Host) { r.register(ctx, h) }
+	deregister := func(h Host) { r.deregister(ctx, h) }
 
 	for _, provider := range r.providers {
-		r.errGroup.Go(func() error {
-			return provider.Start(ctx, r.events)
+		r.providersWG.Go(func() {
+			if err := provider.Run(ctx, register, deregister); err != nil && !errors.Is(err, context.Canceled) {
+				r.logger.Sugar().Errorw("provider exited", "error", err)
+			}
 		})
 	}
 
+	<-ctx.Done()
+	// wait for providers first to make sure monitors are not started anymore
+	r.providersWG.Wait()
+	r.monitorsWG.Wait()
 	return nil
 }
 
-// Wait blocks until all internal goroutines have stopped and returns the first non-nil error.
-func (r *Registry) Wait() error {
-	return r.errGroup.Wait()
-}
-
-// Close cancels the registry context and closes all providers.
-func (r *Registry) Close() error {
-	r.cancel()
-	var err error
-	for _, provider := range r.providers {
-		err = errors.Join(err, provider.Close())
-	}
-	return err
-}
-
-// GetOnlineHosts returns information about all online hosts.
-func (r *Registry) GetOnlineHosts() map[Host]*Info {
-	online := make(map[Host]*Info)
-
-	for h, i := range r.hosts {
-		if i.GetOnline() {
-			online[h] = i
-		}
-	}
-	return online
-}
-
-func (r *Registry) eventLoop(ctx context.Context) error {
-	for {
-		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return nil
-			}
-			return ctx.Err()
-		case e := <-r.events:
-			err := r.handle(ctx, e)
-			if err != nil {
-				r.logger.Sugar().Debugw("error while handling event", "error", err)
-			}
-		}
-	}
-}
-
-func (r *Registry) handle(ctx context.Context, e Event) error {
-	r.logger.Sugar().Debugw("event received", "event", e)
-	switch e.Type {
-	case HostRegistered:
-		_, found := r.hosts[e.Host]
-		if found {
-			r.logger.Sugar().Infow("host already registered", "address", e.Host)
-			return nil
-		}
-		r.hosts[e.Host] = &Info{}
-		r.errGroup.Go(func() error {
-			return r.connCheckerWorker(ctx, e.Host)
-		})
-	case HostDeregistered:
-		// TODO(tzdybal): stop connection checker worker!
-		r.stopCollectionsWorker(e.Host)
-		delete(r.hosts, e.Host)
-	case HostOnline:
-		r.hosts[e.Host].SetOnline(true)
-		r.startCollectionsWorker(ctx, e.Host)
-	case HostOffline:
-		r.hosts[e.Host].SetOnline(false)
-		r.stopCollectionsWorker(e.Host)
-	default:
-		r.logger.Sugar().Errorw("unknown event type", "type", e.Type)
-	}
-	return nil
-}
-
-func (r *Registry) startCollectionsWorker(ctx context.Context, h Host) {
-	if r.collFetcher == nil {
+func (r *Registry) register(ctx context.Context, h Host) {
+	r.mtx.Lock()
+	if _, ok := r.monitors[h]; ok {
+		r.mtx.Unlock()
 		return
 	}
-	if _, running := r.collWorkers[h]; running {
-		return
-	}
-	workerCtx, cancel := context.WithCancel(ctx) //nolint:gosec // cancel is invoked by stopCollectionsWorker
-	r.collWorkers[h] = cancel
-	r.errGroup.Go(func() error {
-		return r.collectionsWorker(workerCtx, h)
+	ctx, cancel := context.WithCancel(ctx) //nolint:gosec // false positive, fixed recently: https://github.com/securego/gosec/commit/e354c572d957eb8bf63481cc9ba2704b58a6ae35
+	r.monitors[h] = cancel
+	r.mtx.Unlock()
+
+	r.monitorsWG.Go(func() {
+		r.monitor(ctx, h)
 	})
 }
 
-func (r *Registry) stopCollectionsWorker(h Host) {
-	if cancel, ok := r.collWorkers[h]; ok {
+func (r *Registry) deregister(_ context.Context, h Host) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	if cancel, ok := r.monitors[h]; ok {
+		delete(r.monitors, h)
 		cancel()
-		delete(r.collWorkers, h)
 	}
 }
 
-func (r *Registry) collectionsWorker(ctx context.Context, h Host) error {
-	r.fetchAndStoreCollections(ctx, h)
+func (r *Registry) monitor(ctx context.Context, h Host) {
+	var (
+		online bool
+		colls  []string
+	)
 
-	ticker := time.NewTicker(r.config.CollectionsRefreshInterval)
-	defer ticker.Stop()
+	checkColls := func() {
+		newColls, err := r.collFetcher.FetchCollections(ctx, h)
+		if err != nil {
+			r.logger.Sugar().Errorw("error while fetching collections", "host", string(h), "error", err)
+			return
+		}
+		slices.Sort(newColls)
+		r.notifyCollsUpdate(h, colls, newColls)
+		colls = newColls
+	}
+
+	checkConn := func() {
+		res := r.connChecker.CheckConnection(ctx, h)
+		if res.Online != online {
+			if res.Online {
+				r.notifyHostUp(h)
+				// fetch collections immediately
+				checkColls()
+			} else {
+				r.notifyHostDown(h)
+			}
+			online = res.Online
+		}
+	}
+
+	// start checking status immediately
+	checkConn()
+
+	connTicker := time.NewTicker(r.config.ConnCheckInterval)
+	defer connTicker.Stop()
+	collTicker := time.NewTicker(r.config.CollectionsRefreshInterval)
+	defer collTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return nil
+			if online {
+				r.notifyCollsUpdate(h, colls, nil)
+				r.notifyHostDown(h)
 			}
-			return ctx.Err()
-		case <-ticker.C:
-			r.fetchAndStoreCollections(ctx, h)
+			return
+		case <-connTicker.C:
+			checkConn()
+		case <-collTicker.C:
+			if online {
+				checkColls()
+			}
 		}
 	}
 }
 
-func (r *Registry) fetchAndStoreCollections(ctx context.Context, h Host) {
-	names, err := r.collFetcher.FetchCollections(ctx, h)
-	if err != nil {
-		r.logger.Sugar().Debugw("collections fetch failed", "host", h, "error", err)
-		return
-	}
-	if info, ok := r.hosts[h]; ok {
-		info.SetCollections(names)
+func (r *Registry) notifyHostUp(h Host) {
+	for _, o := range r.observers {
+		o.Up(h)
 	}
 }
 
-func (r *Registry) connCheckerWorker(ctx context.Context, host Host) error {
-	ticker := time.NewTicker(r.config.ConnCheckInterval)
-	for {
-		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return nil
-			}
-			return ctx.Err()
-		case <-ticker.C:
-			res := r.connChecker.CheckConnection(ctx, host)
-			t := HostOnline
-			if !res.Online {
-				t = HostOffline
-				// TODO(tzdybal): exponential backoff?
-			}
-			r.events <- Event{Type: t, Host: host}
+func (r *Registry) notifyHostDown(h Host) {
+	for _, o := range r.observers {
+		o.Down(h)
+	}
+}
+
+// notifyCollsUpdate compares oldColls with newCools, prepares a list of removed collections and list of added collections
+// It assumes that oldColls and newColls are sorted.
+func (r *Registry) notifyCollsUpdate(h Host, oldColls, newColls []string) {
+	added, removed := getSliceDiffs(oldColls, newColls)
+
+	for _, o := range r.observers {
+		if len(added) > 0 {
+			o.CollectionsAdded(h, added)
+		}
+		if len(removed) > 0 {
+			o.CollectionsRemoved(h, removed)
 		}
 	}
 }
 
-// Event represents a host lifecycle or connectivity change.
-type Event struct {
-	Type EventType
-	Host Host
-}
+func getSliceDiffs(prev, next []string) (added []string, removed []string) {
+	i, j := 0, 0
+	for i < len(prev) && j < len(next) {
+		switch {
+		case prev[i] < next[j]:
+			removed = append(removed, prev[i])
+			i++
+		case prev[i] > next[j]:
+			added = append(added, next[j])
+			j++
+		default:
+			i++
+			j++
+		}
+	}
+	removed = append(removed, prev[i:]...)
+	added = append(added, next[j:]...)
 
-// Host is the address (e.g. URL) of a network host.
-type Host string
-
-// EventType identifies the kind of host event.
-type EventType int
-
-// Host event types.
-const (
-	HostRegistered   EventType = iota // host was registered in Shinzo Network
-	HostDeregistered                  // host was deregistered from Shinzo Network
-	HostOnline                        // host is reachable
-	HostOffline                       // host is unreachable
-)
-
-// Info holds host information in thread safe way.
-type Info struct {
-	online bool
-	// TODO(tzdybal): gather and use more information about hosts
-	collections []string
-
-	mtx sync.Mutex
-}
-
-// NewInfo creates new instance of Info object.
-func NewInfo() *Info {
-	return &Info{}
-}
-
-// SetOnline updates the online status, safe for concurrentuse.
-func (i *Info) SetOnline(o bool) {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-	i.online = o
-}
-
-// GetOnline returns online status, safe for concurrent use.
-func (i *Info) GetOnline() bool {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-	return i.online
-}
-
-// SetCollections sets the collections, safe for concurrent use.
-func (i *Info) SetCollections(collections []string) {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-
-	i.collections = collections
-}
-
-// GetCollections gets the collections, safe for concurrent use.
-func (i *Info) GetCollections() []string {
-	i.mtx.Lock()
-	defer i.mtx.Unlock()
-
-	return slices.Clone(i.collections)
+	return
 }

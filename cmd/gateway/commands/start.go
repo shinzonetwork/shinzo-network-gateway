@@ -1,17 +1,24 @@
 package commands
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/endpoint"
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 	"github.com/shinzonetwork/shinzo-network-gateway/router"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 )
+
+const shutdownTimeout = 30 * time.Second
 
 func (a *App) newStartCmd() (*cobra.Command, error) {
 	cmd := &cobra.Command{
@@ -41,64 +48,51 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 
 	logger.Sugar().Info("Starting Shinzo Network Gateway")
 
+	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// TODO(tzdybal): config/env/flag for host file
 	provider := host.NewFileProvider("hosts.txt")
 	provider.SetLogger(logger)
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
 	collFetcher := host.NewHTTPCollectionsFetcher(defaultTimeout, logger)
+
+	rtr := router.New(logger)
 	registry := host.NewRegistry(
 		host.Config{
 			ConnCheckInterval:          defaultInterval,
 			CollectionsRefreshInterval: defaultCollectionsInterval,
 		},
 		[]host.Provider{provider},
+		[]host.Observer{rtr},
 		connChecker,
 		collFetcher,
 		logger,
 	)
 
-	err = registry.Start(cmd.Context())
-	if err != nil {
-		return fmt.Errorf("error while starting host registry: %w", err)
-	}
-
-	r := router.New(registry, logger)
-
-	handler := endpoint.NewHandler(&endpoint.DefaultCollectionExtractor{}, r, logger)
+	handler := endpoint.NewHandler(&endpoint.DefaultCollectionExtractor{}, rtr, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {
 		return fmt.Errorf("error while creating endpoint: %w", err)
 	}
 
-	endpErrCh := make(chan error, 1)
-	go func() {
-		endpErrCh <- endp.ListenAndServe()
-	}()
+	grp, ctx := errgroup.WithContext(ctx)
+	grp.Go(func() error {
+		return registry.Run(ctx)
+	})
+	grp.Go(func() error {
+		return endp.ListenAndServe()
+	})
+	grp.Go(func() error {
+		<-ctx.Done()
+		// parent ctx is already cancelled here; derive a fresh deadline for graceful shutdown
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+		defer cancel()
+		return endp.Close(ctx)
+	})
 
-	regErrCh := make(chan error, 1)
-	go func() { regErrCh <- registry.Wait() }()
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	errCh := make(chan error, 1)
-	go func() {
-		select {
-		case <-c:
-			logger.Sugar().Info("received SIGTERM, shutting down")
-			err := registry.Close()
-			if err != nil {
-				errCh <- err
-			}
-			errCh <- registry.Wait()
-		case err := <-regErrCh:
-			logger.Sugar().Infow("registry exited", "error", err)
-			errCh <- err
-		case err := <-endpErrCh:
-			logger.Sugar().Infow("ednpoint exited", "error", err)
-			errCh <- err
-		}
-	}()
-
-	return <-errCh
+	if err := grp.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
 }

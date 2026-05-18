@@ -8,18 +8,18 @@ import (
 	"go.uber.org/zap"
 )
 
-// Provider supplies host registration events to the Registry.
+// Provider calls register and deregister callbacks to notify when hosts are registered/deregistered.
 type Provider interface {
-	Start(ctx context.Context, updatesCH chan<- Event) error
-	Close() error
+	Run(ctx context.Context, register func(Host), deregister func(Host)) error
 
 	SetLogger(logger *zap.Logger)
 }
 
-// FileProvider reads hosts line-by-line from a file and emits HostRegistered events.
+// FileProvider reads hosts line-by-line from a file and calls register callback.
 type FileProvider struct {
-	logger   *zap.Logger
 	filename string
+
+	logger *zap.Logger
 }
 
 var _ Provider = &FileProvider{}
@@ -31,8 +31,8 @@ func NewFileProvider(filename string) *FileProvider {
 	}
 }
 
-// Start reads the host file and sends a HostRegistered event for each line.
-func (p *FileProvider) Start(ctx context.Context, updatesCH chan<- Event) error {
+// Run reads the host file and sends a HostRegistered event for each line.
+func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host)) error {
 	p.logger.Sugar().Debugw("opening host file", "path", p.filename)
 	f, err := os.Open(p.filename)
 	if err != nil {
@@ -52,19 +52,11 @@ func (p *FileProvider) Start(ctx context.Context, updatesCH chan<- Event) error 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-
-		case updatesCH <- Event{
-			Type: HostRegistered,
-			Host: Host(host),
-		}:
+		default:
+			register(Host(host))
 		}
 	}
 
-	return nil
-}
-
-// Close is a no-op for FileProvider.
-func (p *FileProvider) Close() error {
 	return nil
 }
 

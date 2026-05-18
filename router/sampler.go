@@ -12,6 +12,9 @@ var (
 
 	// ErrSampleExceedsPool is returned by sampler, when requested sample size exceeds pool size.
 	ErrSampleExceedsPool = errors.New("sample size exceeds pool size")
+
+	// ErrNoHostsAvailable is returned by sampler, when hosts are requested from empty pool.
+	ErrNoHostsAvailable = errors.New("no hosts available")
 )
 
 // Sampler is for sampling n elements from a pool, without replacement.
@@ -45,6 +48,8 @@ func newDeckSampler[T any](pool []T, seed [32]byte) *deckSampler[T] {
 func (d *deckSampler[T]) Sample(n int) ([]T, error) {
 	l := len(d.pool)
 	switch {
+	case l == 0:
+		return nil, ErrNoHostsAvailable
 	case n < 0:
 		return nil, ErrNegativeSampleSize
 	case n > l:
