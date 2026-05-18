@@ -135,6 +135,12 @@ func (r *Registry) monitor(ctx context.Context, h Host) {
 				// fetch collections immediately
 				checkColls()
 			} else {
+				// An offline host has no collections; clear the cache so the
+				// next online transition re-emits the full set.
+				if len(colls) > 0 {
+					r.notifyCollsUpdate(h, colls, nil)
+					colls = nil
+				}
 				r.notifyHostDown(h)
 			}
 			online = res.Online
