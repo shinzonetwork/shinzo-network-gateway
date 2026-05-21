@@ -3,7 +3,6 @@ package host
 import (
 	"context"
 	"errors"
-	"slices"
 	"sync"
 	"time"
 
@@ -97,7 +96,9 @@ func (r *Registry) register(ctx context.Context, h Host) {
 	r.mtx.Unlock()
 
 	r.monitorsWG.Go(func() {
-		r.monitor(ctx, h)
+		m := newMonitor(h, r.connChecker, r.collFetcher, r.observers, r.logger)
+
+		m.run(ctx, r.config.ConnCheckInterval, r.config.CollectionsRefreshInterval)
 	})
 }
 
@@ -108,109 +109,4 @@ func (r *Registry) deregister(_ context.Context, h Host) {
 		delete(r.monitors, h)
 		cancel()
 	}
-}
-
-func (r *Registry) monitor(ctx context.Context, h Host) {
-	var (
-		online bool
-		colls  []string
-	)
-
-	checkColls := func() {
-		newColls, err := r.collFetcher.FetchCollections(ctx, h)
-		if err != nil {
-			r.logger.Sugar().Errorw("error while fetching collections", "host", string(h), "error", err)
-			return
-		}
-		slices.Sort(newColls)
-		r.notifyCollsUpdate(h, colls, newColls)
-		colls = newColls
-	}
-
-	checkConn := func() {
-		res := r.connChecker.CheckConnection(ctx, h)
-		if res.Online != online {
-			if res.Online {
-				r.notifyHostUp(h)
-				// fetch collections immediately
-				checkColls()
-			} else {
-				r.notifyHostDown(h)
-			}
-			online = res.Online
-		}
-	}
-
-	// start checking status immediately
-	checkConn()
-
-	connTicker := time.NewTicker(r.config.ConnCheckInterval)
-	defer connTicker.Stop()
-	collTicker := time.NewTicker(r.config.CollectionsRefreshInterval)
-	defer collTicker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			if online {
-				r.notifyCollsUpdate(h, colls, nil)
-				r.notifyHostDown(h)
-			}
-			return
-		case <-connTicker.C:
-			checkConn()
-		case <-collTicker.C:
-			if online {
-				checkColls()
-			}
-		}
-	}
-}
-
-func (r *Registry) notifyHostUp(h Host) {
-	for _, o := range r.observers {
-		o.Up(h)
-	}
-}
-
-func (r *Registry) notifyHostDown(h Host) {
-	for _, o := range r.observers {
-		o.Down(h)
-	}
-}
-
-// notifyCollsUpdate compares oldColls with newCools, prepares a list of removed collections and list of added collections
-// It assumes that oldColls and newColls are sorted.
-func (r *Registry) notifyCollsUpdate(h Host, oldColls, newColls []string) {
-	added, removed := getSliceDiffs(oldColls, newColls)
-
-	for _, o := range r.observers {
-		if len(added) > 0 {
-			o.CollectionsAdded(h, added)
-		}
-		if len(removed) > 0 {
-			o.CollectionsRemoved(h, removed)
-		}
-	}
-}
-
-func getSliceDiffs(prev, next []string) (added []string, removed []string) {
-	i, j := 0, 0
-	for i < len(prev) && j < len(next) {
-		switch {
-		case prev[i] < next[j]:
-			removed = append(removed, prev[i])
-			i++
-		case prev[i] > next[j]:
-			added = append(added, next[j])
-			j++
-		default:
-			i++
-			j++
-		}
-	}
-	removed = append(removed, prev[i:]...)
-	added = append(added, next[j:]...)
-
-	return
 }
