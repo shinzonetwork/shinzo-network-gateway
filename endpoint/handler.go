@@ -117,17 +117,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responses := h.getHostsResponses(r.Context(), hosts, body)
+	responses := h.getHostsResponses(r.Context(), hosts, body, r.Host, r.Header.Get("Authorization"))
 
 	h.composeResponse(w, responses, contentType)
 }
 
-func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body []byte) []hostResponse {
+func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body []byte, hostHeader, authHeader string) []hostResponse {
 	responses := make([]hostResponse, len(hosts))
 	wg := &sync.WaitGroup{}
 	for i, host := range hosts {
 		wg.Go(func() {
-			responses[i] = h.queryHost(ctx, host, body)
+			responses[i] = h.queryHost(ctx, host, body, hostHeader, authHeader)
 		})
 	}
 	wg.Wait()
@@ -148,7 +148,7 @@ const (
 	maxResponseBodySize   = 1 << 20  // 1 MiB
 )
 
-func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) hostResponse {
+func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte, hostHeader, authHeader string) hostResponse {
 	h.logger.Sugar().Debugw("sending query to host", "host", host, "body", body)
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -159,6 +159,14 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte) ho
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", contentTypeGraphQLResponse)
+
+	// Forward original Host and Authorization headers so Shinzo Hosts can verify JWT audience against r.Host.
+	if hostHeader != "" {
+		req.Host = hostHeader
+	}
+	if authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 
 	resp, err := h.client.Do(req)
 	h.logger.Sugar().Debugw("HTTP", "resp", resp, "error", err)

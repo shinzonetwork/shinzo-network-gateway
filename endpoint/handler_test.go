@@ -192,7 +192,7 @@ func TestHandlerGetHostsResponses(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
-			responses := h.getHostsResponses(ctx, th.hosts, body)
+			responses := h.getHostsResponses(ctx, th.hosts, body, "", "")
 
 			require.Len(t, responses, len(c.kinds))
 
@@ -695,4 +695,48 @@ func setupTestHosts(kinds []hostKind) testHosts {
 	}
 
 	return th
+}
+
+// TestHandlerForwardsHostAndAuth checks the gateway copies the inbound Host
+// and Authorization headers onto each outbound host request, so host-side
+// ACP middleware can verify the JWT audience against the URL the caller
+// signed against.
+func TestHandlerForwardsHostAndAuth(t *testing.T) {
+	t.Parallel()
+
+	const (
+		originalHost = "gateway.example.com:8080"
+		bearer       = "Bearer test-token"
+		collection   = "TestView"
+	)
+
+	var backend mock.Mock
+	backend.On("request", originalHost, bearer).Once().Return()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backend.MethodCalled("request", r.Host, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/graphql-response+json")
+		_, _ = w.Write([]byte(`{"data":{}}`))
+	}))
+	defer srv.Close()
+
+	ext := &mockExtractor{}
+	ext.On("ExtractCollections", mock.Anything).Return([]string{collection}, nil)
+
+	sel := &mockSelector{}
+	sel.On("SelectHosts", mock.Anything, []string{collection}).Return([]host.Host{host.Host(srv.URL)}, nil)
+
+	logger, _ := zap.NewDevelopment()
+	h := NewHandler(ext, sel, logger)
+
+	req := httptest.NewRequest(http.MethodPost, "http://"+originalHost+"/graphql", strings.NewReader(`{"query":"{ TestView { id } }"}`))
+	req.Host = originalHost
+	req.Header.Set("Content-Type", contentTypeJSON)
+	req.Header.Set("Accept", contentTypeGraphQLResponse)
+	req.Header.Set("Authorization", bearer)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	backend.AssertExpectations(t)
 }
