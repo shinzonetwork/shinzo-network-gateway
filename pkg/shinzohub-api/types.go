@@ -11,7 +11,7 @@ type PageRequest struct {
 
 // PageResponse holds cursor-based pagination metadata returned by list endpoints.
 type PageResponse struct {
-	NextKey string `json:"next_key,omitemtpy"`
+	NextKey string `json:"next_key,omitempty"`
 	Total   string `json:"total,omitempty"`
 }
 
