@@ -31,6 +31,9 @@ type gqlLocation struct {
 // ErrEmptyQuery is returned if GraphQL query is empty.
 var ErrEmptyQuery = errors.New("empty GraphQL query")
 
+// ErrParse is returned if GraphQL query cannot be parsed.
+var ErrParse = errors.New("GraphQL parse error")
+
 // ErrHostHTTP is returned when an upstream host responds with a non-2xx status.
 var ErrHostHTTP = errors.New("host HTTP error")
 

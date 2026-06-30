@@ -13,13 +13,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/vektah/gqlparser/v2/ast"
 	"go.uber.org/zap"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 )
 
 var (
-	errParse   = errors.New("parse error")
 	errNoHosts = errors.New("no hosts")
 	errFail    = errors.New("fail")
 )
@@ -28,7 +28,7 @@ type mockExtractor struct {
 	mock.Mock
 }
 
-func (m *mockExtractor) ExtractCollections(graphql string) ([]string, error) {
+func (m *mockExtractor) ExtractCollections(graphql *ast.QueryDocument) ([]string, error) {
 	args := m.Called(graphql)
 	return args.Get(0).([]string), args.Error(1)
 }
@@ -265,11 +265,8 @@ func TestHandler(t *testing.T) {
 			wantBodyHas:    "unsupported Content-Type",
 		},
 		{
-			name: "extractor error",
-			body: `{"query":"bad"}`,
-			setupExtractor: func(ext *mockExtractor) {
-				ext.On("ExtractCollections", "bad").Return([]string(nil), errParse)
-			},
+			name:        "extractor error",
+			body:        `{"query":"bad"}`,
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: "parse error",
 		},
@@ -277,7 +274,7 @@ func TestHandler(t *testing.T) {
 			name: "selector error",
 			body: `{"query":"{ hero { name } }"}`,
 			setupExtractor: func(ext *mockExtractor) {
-				ext.On("ExtractCollections", "{ hero { name } }").Return([]string{"hero"}, nil)
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
 			setupSelector: func(sel *mockSelector, _ []host.Host) {
 				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return([]host.Host(nil), errNoHosts)
@@ -289,7 +286,7 @@ func TestHandler(t *testing.T) {
 			name: "successful query",
 			body: `{"query":"{ hero { name } }"}`,
 			setupExtractor: func(ext *mockExtractor) {
-				ext.On("ExtractCollections", "{ hero { name } }").Return([]string{"hero"}, nil)
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
 				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
@@ -298,12 +295,9 @@ func TestHandler(t *testing.T) {
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
 		},
 		{
-			name:   "legacy content type uses 200 for request errors",
-			body:   `{"query":"bad"}`,
-			accept: "application/json",
-			setupExtractor: func(ext *mockExtractor) {
-				ext.On("ExtractCollections", "bad").Return([]string(nil), errParse)
-			},
+			name:        "legacy content type uses 200 for request errors",
+			body:        `{"query":"bad"}`,
+			accept:      "application/json",
 			wantStatus:  http.StatusOK,
 			wantBodyHas: "parse error",
 		},
@@ -739,4 +733,13 @@ func TestHandlerForwardsHostAndAuth(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, w.Code)
 	backend.AssertExpectations(t)
+}
+
+func mustParseQuery(t *testing.T, graphql string) *ast.QueryDocument {
+	t.Helper()
+	ast, err := parseQuery(graphql)
+	if err != nil {
+		t.Fail()
+	}
+	return ast
 }

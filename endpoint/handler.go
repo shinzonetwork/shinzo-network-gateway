@@ -105,7 +105,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	collections, err := h.extractor.ExtractCollections(gqlReq.Query)
+	ast, err := parseQuery(gqlReq.Query)
+	if err != nil {
+		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
+		return
+	}
+
+	collections, err := h.extractor.ExtractCollections(ast)
 	if err != nil {
 		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
 		return
