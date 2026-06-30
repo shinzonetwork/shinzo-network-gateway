@@ -40,7 +40,7 @@ func (v *LimitValidator) Validate(req *ValidationRequest) error {
 		for _, sel := range op.SelectionSet {
 			field, ok := sel.(*ast.Field)
 			if !ok {
-				continue
+				return fmt.Errorf("%w: %T", ErrUnsupportedSelection, sel)
 			}
 			arg := field.Arguments.ForName("limit")
 			if arg == nil {

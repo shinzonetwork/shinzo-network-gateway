@@ -40,6 +40,10 @@ var ErrValidation = errors.New("validation failed")
 // ErrMissingLimit is returned when a root field is missing a required limit argument.
 var ErrMissingLimit = errors.New("limit not specified")
 
+// ErrUnsupportedSelection is returned when a root selection is not a plain field
+// (a fragment spread or inline fragment).
+var ErrUnsupportedSelection = errors.New("unsupported root selection")
+
 // ErrInvalidLimit is returned when a limit argument is present but its value
 // cannot be statically verified (non-integer literal or a variable) or is not positive.
 var ErrInvalidLimit = errors.New("invalid limit")

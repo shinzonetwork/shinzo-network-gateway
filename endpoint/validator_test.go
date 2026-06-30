@@ -82,6 +82,18 @@ func TestLimitValidator(t *testing.T) {
 			limit: 100,
 			query: `{ users(limit: 10) { id posts { id } } }`,
 		},
+		{
+			name:  "root inline fragment is rejected",
+			limit: 100,
+			query: `{ ... on Query { users(limit: 10) { id } } }`,
+			err:   ErrUnsupportedSelection,
+		},
+		{
+			name:  "root fragment spread is rejected",
+			limit: 100,
+			query: `{ ...Roots } fragment Roots on Query { users(limit: 10) { id } }`,
+			err:   ErrUnsupportedSelection,
+		},
 	}
 
 	for _, tc := range cases {
