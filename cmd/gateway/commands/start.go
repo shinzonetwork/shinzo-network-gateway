@@ -20,6 +20,9 @@ import (
 
 const shutdownTimeout = 30 * time.Second
 
+// TODO(tzdybal): add configuration option.
+const maxLimit = 100_000
+
 func (a *App) newStartCmd() (*cobra.Command, error) {
 	cmd := &cobra.Command{
 		Use:   "start",
@@ -70,8 +73,8 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 		logger,
 	)
 
-	// TODO(tzdybal): setup validators
-	handler := endpoint.NewHandler(nil, &endpoint.DefaultCollectionExtractor{}, rtr, logger)
+	validators := []endpoint.Validator{endpoint.NewLimitValidator(maxLimit)}
+	handler := endpoint.NewHandler(validators, &endpoint.DefaultCollectionExtractor{}, rtr, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {
 		return fmt.Errorf("error while creating endpoint: %w", err)
