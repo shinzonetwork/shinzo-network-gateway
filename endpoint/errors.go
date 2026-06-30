@@ -34,6 +34,19 @@ var ErrEmptyQuery = errors.New("empty GraphQL query")
 // ErrParse is returned if GraphQL query cannot be parsed.
 var ErrParse = errors.New("GraphQL parse error")
 
+// ErrValidation is returned when a GraphQL query fails validation.
+var ErrValidation = errors.New("validation failed")
+
+// ErrMissingLimit is returned when a root field is missing a required limit argument.
+var ErrMissingLimit = errors.New("limit not specified")
+
+// ErrInvalidLimit is returned when a limit argument is present but its value
+// cannot be statically verified (non-integer literal or a variable) or is not positive.
+var ErrInvalidLimit = errors.New("invalid limit")
+
+// ErrLimitTooLarge is returned when a limit value exceeds the configured maximum.
+var ErrLimitTooLarge = errors.New("limit exceeds maximum")
+
 // ErrHostHTTP is returned when an upstream host responds with a non-2xx status.
 var ErrHostHTTP = errors.New("host HTTP error")
 

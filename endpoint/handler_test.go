@@ -182,7 +182,7 @@ func TestHandlerGetHostsResponses(t *testing.T) {
 			th := setupTestHosts(c.kinds)
 			defer th.cleanup()
 
-			h := NewHandler(nil, nil, logger)
+			h := NewHandler(nil, nil, nil, logger)
 			require.NotNil(t, h)
 
 			timeout := c.timeout
@@ -321,7 +321,7 @@ func TestHandler(t *testing.T) {
 				c.setupSelector(sel, []host.Host{host.Host(okHost.URL)})
 			}
 
-			h := NewHandler(ext, sel, logger)
+			h := NewHandler(nil, ext, sel, logger)
 
 			accept := c.accept
 			if accept == "" {
@@ -588,7 +588,7 @@ func TestComposeResponse(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := NewHandler(nil, nil, logger)
+			h := NewHandler(nil, nil, nil, logger)
 			w := httptest.NewRecorder()
 
 			h.composeResponse(w, c.responses, c.contentType)
@@ -720,7 +720,7 @@ func TestHandlerForwardsHostAndAuth(t *testing.T) {
 	sel.On("SelectHosts", mock.Anything, []string{collection}).Return([]host.Host{host.Host(srv.URL)}, nil)
 
 	logger, _ := zap.NewDevelopment()
-	h := NewHandler(ext, sel, logger)
+	h := NewHandler(nil, ext, sel, logger)
 
 	req := httptest.NewRequest(http.MethodPost, "http://"+originalHost+"/graphql", strings.NewReader(`{"query":"{ TestView { id } }"}`))
 	req.Host = originalHost

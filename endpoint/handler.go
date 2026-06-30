@@ -27,10 +27,11 @@ type HostsSelector interface {
 
 // Handler is a HTTP handler for "POST /graphql" endpoint.
 type Handler struct {
-	extractor CollectionsExtractor
-	selector  HostsSelector
-	client    *http.Client
-	logger    *zap.Logger
+	validators []Validator
+	extractor  CollectionsExtractor
+	selector   HostsSelector
+	client     *http.Client
+	logger     *zap.Logger
 }
 
 var _ http.Handler = &Handler{}
@@ -59,17 +60,18 @@ type hostResponse struct {
 }
 
 // NewHandler creates new Handler instance.
-func NewHandler(extractor CollectionsExtractor, selector HostsSelector, logger *zap.Logger) *Handler {
+func NewHandler(validators []Validator, extractor CollectionsExtractor, selector HostsSelector, logger *zap.Logger) *Handler {
 	transport := &http.Transport{
 		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
 		ResponseHeaderTimeout: responseHeaderTimeout,
 	}
 
 	return &Handler{
-		extractor: extractor,
-		selector:  selector,
-		client:    &http.Client{Transport: transport},
-		logger:    logger.Named("handler"),
+		validators: validators,
+		extractor:  extractor,
+		selector:   selector,
+		client:     &http.Client{Transport: transport},
+		logger:     logger.Named("handler"),
 	}
 }
 
@@ -109,6 +111,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
 		return
+	}
+
+	for _, v := range h.validators {
+		if err := v.Validate(&ValidationRequest{Query: ast, Header: r.Header}); err != nil {
+			h.writeError(w, requestErrorStatus(contentType), fmt.Errorf("%w: %w", ErrValidation, err).Error(), contentType)
+			return
+		}
 	}
 
 	collections, err := h.extractor.ExtractCollections(ast)
