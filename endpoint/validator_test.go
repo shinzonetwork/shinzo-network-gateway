@@ -130,3 +130,132 @@ func TestLimitValidator(t *testing.T) {
 		})
 	}
 }
+
+func TestOrderValidator(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		query string
+		err   error
+	}{
+		{
+			name:  "valid single field ascending",
+			query: `{ users(order: {name: ASC}) { id } }`,
+		},
+		{
+			name:  "valid single field descending",
+			query: `{ users(order: {created: DESC}) { id } }`,
+		},
+		{
+			name:  "valid multi-field list",
+			query: `{ users(order: [{name: ASC}, {age: DESC}]) { id } }`,
+		},
+		{
+			name:  "valid nested relation order",
+			query: `{ users(order: {author: {birthday: DESC}}) { id } }`,
+		},
+		{
+			name:  "valid nested relation inside list",
+			query: `{ users(order: [{name: ASC}, {author: {birthday: DESC}}]) { id } }`,
+		},
+		{
+			name:  "multiple root fields all valid",
+			query: `{ users(order: {name: ASC}) { id } posts(order: {title: DESC}) { id } }`,
+		},
+		{
+			name:  "nested field without order is allowed",
+			query: `{ users(order: {name: ASC}) { id posts { id } } }`,
+		},
+		{
+			name:  "missing order",
+			query: `{ users { id } }`,
+			err:   ErrMissingOrder,
+		},
+		{
+			name:  "multiple root fields one missing order",
+			query: `{ users(order: {name: ASC}) { id } posts { id } }`,
+			err:   ErrMissingOrder,
+		},
+		{
+			name:  "duplicate order argument",
+			query: `{ users(order: {name: ASC}, order: {age: DESC}) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "object with multiple fields is rejected",
+			query: `{ users(order: {name: ASC, age: DESC}) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "empty order object",
+			query: `{ users(order: {}) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "empty order list",
+			query: `{ users(order: []) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "unknown direction",
+			query: `{ users(order: {name: ASCENDING}) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "direction as string",
+			query: `{ users(order: {name: "ASC"}) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "order as scalar",
+			query: `{ users(order: 5) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "order as variable",
+			query: `query ($o: ordering) { users(order: $o) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "list element is not an object",
+			query: `{ users(order: [ASC]) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "nested relation unknown direction",
+			query: `{ users(order: {author: {birthday: SIDEWAYS}}) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "nested relation with multiple fields is rejected",
+			query: `{ users(order: {author: {name: ASC, birthday: DESC}}) { id } }`,
+			err:   ErrInvalidOrder,
+		},
+		{
+			name:  "root inline fragment is rejected",
+			query: `{ ... on Query { users(order: {name: ASC}) { id } } }`,
+			err:   ErrUnsupportedSelection,
+		},
+		{
+			name:  "root fragment spread is rejected",
+			query: `{ ...Roots } fragment Roots on Query { users(order: {name: ASC}) { id } }`,
+			err:   ErrUnsupportedSelection,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			query, err := parseQuery(tc.query)
+			require.NoError(t, err)
+
+			validator := &OrderValidator{}
+
+			err = validator.Validate(&ValidationRequest{Query: query})
+			if tc.err != nil {
+				require.ErrorIs(t, err, tc.err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
