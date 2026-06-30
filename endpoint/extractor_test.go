@@ -139,7 +139,7 @@ func TestDefaultCollectionsExtractor(t *testing.T) {
 			collections, err := extr.ExtractCollections(ast)
 
 			if c.err {
-				require.True(t, parseErr != nil || err != nil)
+				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 				require.ElementsMatch(t, collections, c.expected)

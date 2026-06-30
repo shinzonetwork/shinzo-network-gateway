@@ -42,6 +42,12 @@ func (m *mockSelector) SelectHosts(ctx context.Context, collections []string) ([
 	return args.Get(0).([]host.Host), args.Error(1)
 }
 
+type failValidator struct{}
+
+func (*failValidator) Validate(req *ValidationRequest) error {
+	return errFail
+}
+
 func TestGetContentType(t *testing.T) {
 	t.Parallel()
 
@@ -227,6 +233,7 @@ func TestHandler(t *testing.T) {
 		body           string
 		accept         string
 		reqContentType string
+		validators     []Validator
 		setupExtractor func(*mockExtractor)
 		setupSelector  func(*mockSelector, []host.Host)
 		wantStatus     int
@@ -265,10 +272,19 @@ func TestHandler(t *testing.T) {
 			wantBodyHas:    "unsupported Content-Type",
 		},
 		{
-			name:        "extractor error",
+			name:        "parser error",
 			body:        `{"query":"bad"}`,
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: "parse error",
+		},
+		{
+			name: "extractor error",
+			body: `{"query":"{ hero { name } }"}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string(nil), errFail)
+			},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: errFail.Error(),
 		},
 		{
 			name: "selector error",
@@ -301,6 +317,47 @@ func TestHandler(t *testing.T) {
 			wantStatus:  http.StatusOK,
 			wantBodyHas: "parse error",
 		},
+		{
+			name:        "missing limit",
+			body:        `{"query":"{ hero { name } }"}`,
+			validators:  []Validator{&LimitValidator{limit: 100}},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: ErrMissingLimit.Error(),
+		},
+		{
+			name:        "invalid limit",
+			body:        `{"query":"{ hero(limit: -1) { name } }"}`,
+			validators:  []Validator{&LimitValidator{limit: 100}},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: ErrInvalidLimit.Error(),
+		},
+		{
+			name:        "limit exceeded",
+			body:        `{"query":"{ hero(limit: 123) { name } }"}`,
+			validators:  []Validator{&LimitValidator{limit: 100}},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: ErrLimitTooLarge.Error(),
+		},
+		{
+			name:       "limit ok",
+			body:       `{"query":"{ hero(limit: 100) { name } }"}`,
+			validators: []Validator{&LimitValidator{limit: 100}},
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero(limit: 100) { name } }")).Return([]string{"hero"}, nil)
+			},
+			setupSelector: func(sel *mockSelector, hosts []host.Host) {
+				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
+			},
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
+		},
+		{
+			name:        "limit ok, mock validation error",
+			body:        `{"query":"{ hero(limit: 10) { name } }"}`,
+			validators:  []Validator{&LimitValidator{limit: 100}, &failValidator{}},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: errFail.Error(),
+		},
 	}
 
 	for _, c := range cases {
@@ -321,7 +378,7 @@ func TestHandler(t *testing.T) {
 				c.setupSelector(sel, []host.Host{host.Host(okHost.URL)})
 			}
 
-			h := NewHandler(nil, ext, sel, logger)
+			h := NewHandler(c.validators, ext, sel, logger)
 
 			accept := c.accept
 			if accept == "" {
@@ -737,9 +794,7 @@ func TestHandlerForwardsHostAndAuth(t *testing.T) {
 
 func mustParseQuery(t *testing.T, graphql string) *ast.QueryDocument {
 	t.Helper()
-	ast, err := parseQuery(graphql)
-	if err != nil {
-		t.Fail()
-	}
-	return ast
+	query, err := parseQuery(graphql)
+	require.NoError(t, err)
+	return query
 }

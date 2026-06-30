@@ -86,12 +86,12 @@ func TestLimitValidator(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ast, err := parseQuery(tc.query)
+			query, err := parseQuery(tc.query)
 			require.NoError(t, err)
 
 			validator := &LimitValidator{limit: tc.limit}
 
-			err = validator.Validate(&ValidationRequest{Query: ast})
+			err = validator.Validate(&ValidationRequest{Query: query})
 			if tc.err != nil {
 				require.ErrorIs(t, err, tc.err)
 			} else {
