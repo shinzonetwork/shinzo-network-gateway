@@ -27,6 +27,13 @@ type LimitValidator struct {
 
 var _ Validator = &LimitValidator{}
 
+// NewLimitValidator creates configured instance of LimitValidator.
+func NewLimitValidator(limit int) *LimitValidator {
+	return &LimitValidator{
+		limit: limit,
+	}
+}
+
 // Validate checks that each root field carries a valid limit argument.
 func (v *LimitValidator) Validate(req *ValidationRequest) error {
 	for _, op := range req.Query.Operations {

@@ -107,20 +107,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ast, err := parseQuery(gqlReq.Query)
+	query, err := parseQuery(gqlReq.Query)
 	if err != nil {
 		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
 		return
 	}
 
 	for _, v := range h.validators {
-		if err := v.Validate(&ValidationRequest{Query: ast, Header: r.Header}); err != nil {
+		if err := v.Validate(&ValidationRequest{Query: query, Header: r.Header}); err != nil {
 			h.writeError(w, requestErrorStatus(contentType), fmt.Errorf("%w: %w", ErrValidation, err).Error(), contentType)
 			return
 		}
 	}
 
-	collections, err := h.extractor.ExtractCollections(ast)
+	collections, err := h.extractor.ExtractCollections(query)
 	if err != nil {
 		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
 		return

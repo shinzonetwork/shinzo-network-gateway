@@ -44,7 +44,7 @@ func (m *mockSelector) SelectHosts(ctx context.Context, collections []string) ([
 
 type failValidator struct{}
 
-func (*failValidator) Validate(req *ValidationRequest) error {
+func (*failValidator) Validate(*ValidationRequest) error {
 	return errFail
 }
 
@@ -320,28 +320,28 @@ func TestHandler(t *testing.T) {
 		{
 			name:        "missing limit",
 			body:        `{"query":"{ hero { name } }"}`,
-			validators:  []Validator{&LimitValidator{limit: 100}},
+			validators:  []Validator{NewLimitValidator(100)},
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: ErrMissingLimit.Error(),
 		},
 		{
 			name:        "invalid limit",
 			body:        `{"query":"{ hero(limit: -1) { name } }"}`,
-			validators:  []Validator{&LimitValidator{limit: 100}},
+			validators:  []Validator{NewLimitValidator(100)},
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: ErrInvalidLimit.Error(),
 		},
 		{
 			name:        "limit exceeded",
 			body:        `{"query":"{ hero(limit: 123) { name } }"}`,
-			validators:  []Validator{&LimitValidator{limit: 100}},
+			validators:  []Validator{NewLimitValidator(100)},
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: ErrLimitTooLarge.Error(),
 		},
 		{
 			name:       "limit ok",
 			body:       `{"query":"{ hero(limit: 100) { name } }"}`,
-			validators: []Validator{&LimitValidator{limit: 100}},
+			validators: []Validator{NewLimitValidator(100)},
 			setupExtractor: func(ext *mockExtractor) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero(limit: 100) { name } }")).Return([]string{"hero"}, nil)
 			},
@@ -354,7 +354,7 @@ func TestHandler(t *testing.T) {
 		{
 			name:        "limit ok, mock validation error",
 			body:        `{"query":"{ hero(limit: 10) { name } }"}`,
-			validators:  []Validator{&LimitValidator{limit: 100}, &failValidator{}},
+			validators:  []Validator{NewLimitValidator(100), &failValidator{}},
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: errFail.Error(),
 		},
