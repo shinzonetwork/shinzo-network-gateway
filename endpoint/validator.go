@@ -84,3 +84,88 @@ func (v *LimitValidator) checkLimit(field string, val *ast.Value) error {
 	}
 	return nil
 }
+
+// OrderValidator ensures every root field specifies proper ordering.
+type OrderValidator struct{}
+
+var _ Validator = &OrderValidator{}
+
+// Validate checks that each root field carries a valid limit argument.
+func (v *OrderValidator) Validate(req *ValidationRequest) error {
+	for _, op := range req.Query.Operations {
+		for _, sel := range op.SelectionSet {
+			field, ok := sel.(*ast.Field)
+			if !ok {
+				return fmt.Errorf("%w: %T", ErrUnsupportedSelection, sel)
+			}
+			orders := 0
+			var arg *ast.Argument
+			for _, a := range field.Arguments {
+				if a.Name == "order" {
+					orders++
+					arg = a
+				}
+			}
+			switch orders {
+			case 0:
+				return fmt.Errorf("%w: %s", ErrMissingOrder, field.Name)
+			case 1:
+				if err := v.checkOrder(field.Name, arg.Value); err != nil {
+					return err
+				}
+
+			default: // orders > 1
+				return fmt.Errorf("%w: %s: duplicate order argument", ErrInvalidOrder, field.Name)
+			}
+		}
+	}
+	return nil
+}
+
+// checkOrder verifies that an order argument is a DefraDB-compatible ordering:
+// - a single {field: ASC|DESC} object,
+// - a list of such single-field objects (for multi-field ordering, where position is significant),
+// - a nested {relation: {field: ASC|DESC}} objects for ordering on a related collection.
+func (v *OrderValidator) checkOrder(field string, value *ast.Value) error {
+	if value == nil {
+		return fmt.Errorf("%w: %s: order must be an object or list", ErrInvalidOrder, field)
+	}
+	if value.Kind == ast.ObjectValue {
+		return checkOrderObject(field, value)
+	}
+	if value.Kind != ast.ListValue {
+		return fmt.Errorf("%w: %s: order must be an object or list", ErrInvalidOrder, field)
+	}
+	if len(value.Children) == 0 {
+		return fmt.Errorf("%w: %s: order list must not be empty", ErrInvalidOrder, field)
+	}
+	for _, child := range value.Children {
+		if child.Value.Kind != ast.ObjectValue {
+			return fmt.Errorf("%w: %s: order list elements must be objects", ErrInvalidOrder, field)
+		}
+		if err := checkOrderObject(field, child.Value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkOrderObject(field string, value *ast.Value) error {
+	if len(value.Children) != 1 {
+		return fmt.Errorf("%w: %s: each order object must specify exactly one field", ErrInvalidOrder, field)
+	}
+	return checkOrderValue(field, value.Children[0].Value)
+}
+
+func checkOrderValue(field string, value *ast.Value) error {
+	if value.Kind == ast.ObjectValue {
+		return checkOrderObject(field, value)
+	}
+	if value.Kind != ast.EnumValue {
+		return fmt.Errorf("%w: %s: order value must be ASC, DESC, or a nested object", ErrInvalidOrder, field)
+	}
+	if value.Raw != "ASC" && value.Raw != "DESC" {
+		return fmt.Errorf("%w: %s: direction must be ASC or DESC, got %s", ErrInvalidOrder, field, value.Raw)
+	}
+	return nil
+}

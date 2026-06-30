@@ -44,6 +44,14 @@ var ErrMissingLimit = errors.New("limit not specified")
 // not a positive 32-bit integer literal, duplicated, or exceeding the maximum.
 var ErrInvalidLimit = errors.New("invalid limit")
 
+// ErrMissingOrder is returned when a root field is missing a required order argument.
+var ErrMissingOrder = errors.New("order not specified")
+
+// ErrInvalidOrder is returned when an order argument is present but invalid:
+// not a DefraDB-compatible object/list of single-field {field: ASC|DESC}
+// conditions, duplicated, or carrying an unknown direction.
+var ErrInvalidOrder = errors.New("invalid order")
+
 // ErrUnsupportedSelection is returned when a root selection is not a plain field
 // (a fragment spread or inline fragment).
 var ErrUnsupportedSelection = errors.New("unsupported root selection")
