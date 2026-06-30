@@ -40,16 +40,13 @@ var ErrValidation = errors.New("validation failed")
 // ErrMissingLimit is returned when a root field is missing a required limit argument.
 var ErrMissingLimit = errors.New("limit not specified")
 
+// ErrInvalidLimit is returned when a limit argument is present but invalid:
+// not a positive 32-bit integer literal, duplicated, or exceeding the maximum.
+var ErrInvalidLimit = errors.New("invalid limit")
+
 // ErrUnsupportedSelection is returned when a root selection is not a plain field
 // (a fragment spread or inline fragment).
 var ErrUnsupportedSelection = errors.New("unsupported root selection")
-
-// ErrInvalidLimit is returned when a limit argument is present but its value
-// cannot be statically verified (non-integer literal or a variable) or is not positive.
-var ErrInvalidLimit = errors.New("invalid limit")
-
-// ErrLimitTooLarge is returned when a limit value exceeds the configured maximum.
-var ErrLimitTooLarge = errors.New("limit exceeds maximum")
 
 // ErrHostHTTP is returned when an upstream host responds with a non-2xx status.
 var ErrHostHTTP = errors.New("host HTTP error")

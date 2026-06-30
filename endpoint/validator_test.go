@@ -28,7 +28,7 @@ func TestLimitValidator(t *testing.T) {
 			name:  "limit over range",
 			limit: 100,
 			query: `{ users(limit: 101) { id } }`,
-			err:   ErrLimitTooLarge,
+			err:   ErrInvalidLimit,
 		},
 		{
 			name:  "negative limit",
@@ -65,6 +65,24 @@ func TestLimitValidator(t *testing.T) {
 			limit: 100,
 			query: `{ users { id } }`,
 			err:   ErrMissingLimit,
+		},
+		{
+			name:  "duplicate limit argument",
+			limit: 100,
+			query: `{ users(limit: 1, limit: 9999999) { id } }`,
+			err:   ErrInvalidLimit,
+		},
+		{
+			name:  "limit exceeds int32 range",
+			limit: 100,
+			query: `{ users(limit: 3000000000) { id } }`,
+			err:   ErrInvalidLimit,
+		},
+		{
+			name:  "limit below int32 range",
+			limit: 100,
+			query: `{ users(limit: -3000000000) { id } }`,
+			err:   ErrInvalidLimit,
 		},
 		{
 			name:  "multiple root fields all valid",

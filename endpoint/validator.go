@@ -42,12 +42,23 @@ func (v *LimitValidator) Validate(req *ValidationRequest) error {
 			if !ok {
 				return fmt.Errorf("%w: %T", ErrUnsupportedSelection, sel)
 			}
-			arg := field.Arguments.ForName("limit")
-			if arg == nil {
-				return fmt.Errorf("%w: %s", ErrMissingLimit, field.Name)
+			limits := 0
+			var arg *ast.Argument
+			for _, a := range field.Arguments {
+				if a.Name == "limit" {
+					limits++
+					arg = a
+				}
 			}
-			if err := v.checkLimit(field.Name, arg.Value); err != nil {
-				return err
+			switch limits {
+			case 0:
+				return fmt.Errorf("%w: %s", ErrMissingLimit, field.Name)
+			case 1:
+				if err := v.checkLimit(field.Name, arg.Value); err != nil {
+					return err
+				}
+			default: // limits > 1
+				return fmt.Errorf("%w: %s: duplicate limit argument", ErrInvalidLimit, field.Name)
 			}
 		}
 	}
@@ -59,15 +70,17 @@ func (v *LimitValidator) checkLimit(field string, val *ast.Value) error {
 	if val == nil || val.Kind != ast.IntValue {
 		return fmt.Errorf("%w: %s: limit must be an integer literal", ErrInvalidLimit, field)
 	}
-	n, err := strconv.Atoi(val.Raw)
+	// GraphQL Int is a signed 32-bit value; parse with that bound so out-of-range
+	// literals are rejected rather than silently forwarded as invalid Ints.
+	n, err := strconv.ParseInt(val.Raw, 10, 32)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrInvalidLimit, field, err)
 	}
 	if n <= 0 {
 		return fmt.Errorf("%w: %s: limit must be positive, got %d", ErrInvalidLimit, field, n)
 	}
-	if n > v.limit {
-		return fmt.Errorf("%w: %s: limit %d exceeds maximum %d", ErrLimitTooLarge, field, n, v.limit)
+	if n > int64(v.limit) {
+		return fmt.Errorf("%w: %s: limit %d exceeds maximum %d", ErrInvalidLimit, field, n, v.limit)
 	}
 	return nil
 }

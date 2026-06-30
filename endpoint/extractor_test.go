@@ -132,18 +132,17 @@ func TestDefaultCollectionsExtractor(t *testing.T) {
 			t.Parallel()
 
 			extr := &DefaultCollectionExtractor{}
-			ast, parseErr := parseQuery(c.query)
-			if c.err && parseErr != nil {
-				return
-			}
-			collections, err := extr.ExtractCollections(ast)
+			query, err := parseQuery(c.query)
 
 			if c.err {
 				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.ElementsMatch(t, collections, c.expected)
+				return
 			}
+			require.NoError(t, err)
+
+			collections, err := extr.ExtractCollections(query)
+			require.NoError(t, err)
+			require.ElementsMatch(t, collections, c.expected)
 		})
 	}
 }

@@ -336,7 +336,7 @@ func TestHandler(t *testing.T) {
 			body:        `{"query":"{ hero(limit: 123) { name } }"}`,
 			validators:  []Validator{NewLimitValidator(100)},
 			wantStatus:  http.StatusBadRequest,
-			wantBodyHas: ErrLimitTooLarge.Error(),
+			wantBodyHas: ErrInvalidLimit.Error(),
 		},
 		{
 			name:       "limit ok",
