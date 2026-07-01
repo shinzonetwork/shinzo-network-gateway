@@ -36,30 +36,28 @@ func NewLimitValidator(limit int) *LimitValidator {
 
 // Validate checks that each root field carries a valid limit argument.
 func (v *LimitValidator) Validate(req *ValidationRequest) error {
-	for _, op := range req.Query.Operations {
-		for _, sel := range op.SelectionSet {
-			field, ok := sel.(*ast.Field)
-			if !ok {
-				return fmt.Errorf("%w: %T", ErrUnsupportedSelection, sel)
+	fields, err := rootFields(req.Query)
+	if err != nil {
+		return err
+	}
+	for _, field := range fields {
+		limits := 0
+		var arg *ast.Argument
+		for _, a := range field.Arguments {
+			if a.Name == "limit" {
+				limits++
+				arg = a
 			}
-			limits := 0
-			var arg *ast.Argument
-			for _, a := range field.Arguments {
-				if a.Name == "limit" {
-					limits++
-					arg = a
-				}
+		}
+		switch limits {
+		case 0:
+			return fmt.Errorf("%w: %s", ErrMissingLimit, field.Name)
+		case 1:
+			if err := v.checkLimit(field.Name, arg.Value); err != nil {
+				return err
 			}
-			switch limits {
-			case 0:
-				return fmt.Errorf("%w: %s", ErrMissingLimit, field.Name)
-			case 1:
-				if err := v.checkLimit(field.Name, arg.Value); err != nil {
-					return err
-				}
-			default: // limits > 1
-				return fmt.Errorf("%w: %s: duplicate limit argument", ErrInvalidLimit, field.Name)
-			}
+		default: // limits > 1
+			return fmt.Errorf("%w: %s: duplicate limit argument", ErrInvalidLimit, field.Name)
 		}
 	}
 	return nil
@@ -90,33 +88,30 @@ type OrderValidator struct{}
 
 var _ Validator = &OrderValidator{}
 
-// Validate checks that each root field carries a valid limit argument.
+// Validate checks that each root field carries a valid order argument.
 func (v *OrderValidator) Validate(req *ValidationRequest) error {
-	for _, op := range req.Query.Operations {
-		for _, sel := range op.SelectionSet {
-			field, ok := sel.(*ast.Field)
-			if !ok {
-				return fmt.Errorf("%w: %T", ErrUnsupportedSelection, sel)
+	fields, err := rootFields(req.Query)
+	if err != nil {
+		return err
+	}
+	for _, field := range fields {
+		orders := 0
+		var arg *ast.Argument
+		for _, a := range field.Arguments {
+			if a.Name == "order" {
+				orders++
+				arg = a
 			}
-			orders := 0
-			var arg *ast.Argument
-			for _, a := range field.Arguments {
-				if a.Name == "order" {
-					orders++
-					arg = a
-				}
+		}
+		switch orders {
+		case 0:
+			return fmt.Errorf("%w: %s", ErrMissingOrder, field.Name)
+		case 1:
+			if err := v.checkOrder(field.Name, arg.Value); err != nil {
+				return err
 			}
-			switch orders {
-			case 0:
-				return fmt.Errorf("%w: %s", ErrMissingOrder, field.Name)
-			case 1:
-				if err := v.checkOrder(field.Name, arg.Value); err != nil {
-					return err
-				}
-
-			default: // orders > 1
-				return fmt.Errorf("%w: %s: duplicate order argument", ErrInvalidOrder, field.Name)
-			}
+		default: // orders > 1
+			return fmt.Errorf("%w: %s: duplicate order argument", ErrInvalidOrder, field.Name)
 		}
 	}
 	return nil

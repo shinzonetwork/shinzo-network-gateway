@@ -17,3 +17,20 @@ func parseQuery(graphql string) (*ast.QueryDocument, error) {
 	}
 	return query, nil
 }
+
+// rootFields returns the root-level field selections for every operation in query.
+// It returns ErrUnsupportedSelection if a root selection is not a plain field
+// (a fragment spread or inline fragment).
+func rootFields(query *ast.QueryDocument) ([]*ast.Field, error) {
+	var fields []*ast.Field
+	for _, op := range query.Operations {
+		for _, sel := range op.SelectionSet {
+			field, ok := sel.(*ast.Field)
+			if !ok {
+				return nil, fmt.Errorf("%w: %T", ErrUnsupportedSelection, sel)
+			}
+			fields = append(fields, field)
+		}
+	}
+	return fields, nil
+}
