@@ -74,7 +74,8 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	)
 
 	validators := []endpoint.Validator{endpoint.NewLimitValidator(maxLimit), &endpoint.OrderValidator{}}
-	handler := endpoint.NewHandler(validators, &endpoint.DefaultCollectionExtractor{}, rtr, logger)
+	sampleSize := a.v.GetInt(flagSample)
+	handler := endpoint.NewHandler(validators, &endpoint.DefaultCollectionExtractor{}, rtr, sampleSize, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {
 		return fmt.Errorf("error while creating endpoint: %w", err)

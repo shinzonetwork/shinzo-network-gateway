@@ -11,6 +11,8 @@ import (
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 )
 
+const defaultSampleSize = 3
+
 func TestSelectHosts(t *testing.T) {
 	t.Parallel()
 
@@ -71,7 +73,7 @@ func TestSelectHosts(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel()
-			actual, err := r.SelectHosts(ctx, c.colls)
+			actual, err := r.SelectHosts(ctx, defaultSampleSize, c.colls)
 			if c.err != nil {
 				require.ErrorIs(t, err, c.err)
 				require.Nil(t, actual)
@@ -90,7 +92,7 @@ func TestRouterDownClearsPool(t *testing.T) {
 	h := host.Host("test.host")
 	r.CollectionsAdded(h, []string{"col1", "col2"})
 	r.Down(h)
-	hosts, err := r.SelectHosts(context.Background(), []string{"col1"})
+	hosts, err := r.SelectHosts(context.Background(), defaultSampleSize, []string{"col1"})
 	require.ErrorIs(t, err, ErrNoHostsAvailable)
 	require.Nil(t, hosts)
 }

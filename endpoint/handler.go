@@ -22,7 +22,7 @@ import (
 
 // HostsSelector interface allows handler to get hosts for given collections.
 type HostsSelector interface {
-	SelectHosts(ctx context.Context, collections []string) ([]host.Host, error)
+	SelectHosts(ctx context.Context, n int, collections []string) ([]host.Host, error)
 }
 
 // Handler is a HTTP handler for "POST /graphql" endpoint.
@@ -32,6 +32,8 @@ type Handler struct {
 	selector   HostsSelector
 	client     *http.Client
 	logger     *zap.Logger
+
+	defaultSampleSize int
 }
 
 var _ http.Handler = &Handler{}
@@ -60,18 +62,19 @@ type hostResponse struct {
 }
 
 // NewHandler creates new Handler instance.
-func NewHandler(validators []Validator, extractor CollectionsExtractor, selector HostsSelector, logger *zap.Logger) *Handler {
+func NewHandler(validators []Validator, extractor CollectionsExtractor, selector HostsSelector, defaultSampleSize int, logger *zap.Logger) *Handler {
 	transport := &http.Transport{
 		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
 		ResponseHeaderTimeout: responseHeaderTimeout,
 	}
 
 	return &Handler{
-		validators: validators,
-		extractor:  extractor,
-		selector:   selector,
-		client:     &http.Client{Transport: transport},
-		logger:     logger.Named("handler"),
+		validators:        validators,
+		extractor:         extractor,
+		selector:          selector,
+		client:            &http.Client{Transport: transport},
+		logger:            logger.Named("handler"),
+		defaultSampleSize: defaultSampleSize,
 	}
 }
 
@@ -127,7 +130,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hosts, err := h.selector.SelectHosts(r.Context(), collections)
+	n := h.getHostsNumber(gqlReq.Extensions)
+	hosts, err := h.selector.SelectHosts(r.Context(), n, collections)
 	if err != nil {
 		h.writeError(w, http.StatusServiceUnavailable, err.Error(), contentType)
 		return
@@ -136,6 +140,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	responses := h.getHostsResponses(r.Context(), hosts, body, r.Host, r.Header.Get("Authorization"))
 
 	h.composeResponse(w, responses, contentType)
+}
+
+func (h *Handler) getHostsNumber(extensions json.RawMessage) int {
+	if extensions != nil {
+		// TODO(tzdybal): read sample size from extensions
+	}
+	return h.defaultSampleSize
 }
 
 func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body []byte, hostHeader, authHeader string) []hostResponse {

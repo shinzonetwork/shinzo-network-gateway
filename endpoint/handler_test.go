@@ -19,6 +19,8 @@ import (
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 )
 
+const defaultSampleSize = 3
+
 var (
 	errNoHosts = errors.New("no hosts")
 	errFail    = errors.New("fail")
@@ -37,8 +39,8 @@ type mockSelector struct {
 	mock.Mock
 }
 
-func (m *mockSelector) SelectHosts(ctx context.Context, collections []string) ([]host.Host, error) {
-	args := m.Called(ctx, collections)
+func (m *mockSelector) SelectHosts(ctx context.Context, n int, collections []string) ([]host.Host, error) {
+	args := m.Called(ctx, n, collections)
 	return args.Get(0).([]host.Host), args.Error(1)
 }
 
@@ -188,7 +190,7 @@ func TestHandlerGetHostsResponses(t *testing.T) {
 			th := setupTestHosts(c.kinds)
 			defer th.cleanup()
 
-			h := NewHandler(nil, nil, nil, logger)
+			h := NewHandler(nil, nil, nil, defaultSampleSize, logger)
 			require.NotNil(t, h)
 
 			timeout := c.timeout
@@ -293,7 +295,7 @@ func TestHandler(t *testing.T) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
 			setupSelector: func(sel *mockSelector, _ []host.Host) {
-				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return([]host.Host(nil), errNoHosts)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return([]host.Host(nil), errNoHosts)
 			},
 			wantStatus:  http.StatusServiceUnavailable,
 			wantBodyHas: "no hosts",
@@ -305,7 +307,7 @@ func TestHandler(t *testing.T) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
@@ -346,7 +348,7 @@ func TestHandler(t *testing.T) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero(limit: 100) { name } }")).Return([]string{"hero"}, nil)
 			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
@@ -366,7 +368,7 @@ func TestHandler(t *testing.T) {
 				ext.On("ExtractCollections", mock.Anything).Return([]string{"hero"}, nil)
 			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
@@ -391,7 +393,7 @@ func TestHandler(t *testing.T) {
 				c.setupSelector(sel, []host.Host{host.Host(okHost.URL)})
 			}
 
-			h := NewHandler(c.validators, ext, sel, logger)
+			h := NewHandler(c.validators, ext, sel, defaultSampleSize, logger)
 
 			accept := c.accept
 			if accept == "" {
@@ -658,7 +660,7 @@ func TestComposeResponse(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := NewHandler(nil, nil, nil, logger)
+			h := NewHandler(nil, nil, nil, defaultSampleSize, logger)
 			w := httptest.NewRecorder()
 
 			h.composeResponse(w, c.responses, c.contentType)
@@ -787,10 +789,10 @@ func TestHandlerForwardsHostAndAuth(t *testing.T) {
 	ext.On("ExtractCollections", mock.Anything).Return([]string{collection}, nil)
 
 	sel := &mockSelector{}
-	sel.On("SelectHosts", mock.Anything, []string{collection}).Return([]host.Host{host.Host(srv.URL)}, nil)
+	sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{collection}).Return([]host.Host{host.Host(srv.URL)}, nil)
 
 	logger, _ := zap.NewDevelopment()
-	h := NewHandler(nil, ext, sel, logger)
+	h := NewHandler(nil, ext, sel, defaultSampleSize, logger)
 
 	req := httptest.NewRequest(http.MethodPost, "http://"+originalHost+"/graphql", strings.NewReader(`{"query":"{ TestView { id } }"}`))
 	req.Host = originalHost
