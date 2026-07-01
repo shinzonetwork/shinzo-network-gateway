@@ -73,7 +73,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 		logger,
 	)
 
-	validators := []endpoint.Validator{endpoint.NewLimitValidator(maxLimit)}
+	validators := []endpoint.Validator{endpoint.NewLimitValidator(maxLimit), &endpoint.OrderValidator{}}
 	handler := endpoint.NewHandler(validators, &endpoint.DefaultCollectionExtractor{}, rtr, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {

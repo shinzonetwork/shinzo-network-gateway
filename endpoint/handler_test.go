@@ -358,6 +358,19 @@ func TestHandler(t *testing.T) {
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: errFail.Error(),
 		},
+		{
+			name:       "limit ok, order ok",
+			body:       `{"query":"{ hero(limit: 10, order: {name: ASC}) { name } }"}`,
+			validators: []Validator{NewLimitValidator(100), &OrderValidator{}},
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mock.Anything).Return([]string{"hero"}, nil)
+			},
+			setupSelector: func(sel *mockSelector, hosts []host.Host) {
+				sel.On("SelectHosts", mock.Anything, []string{"hero"}).Return(hosts, nil)
+			},
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
+		},
 	}
 
 	for _, c := range cases {
