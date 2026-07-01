@@ -55,7 +55,7 @@ func (r *Router) SelectHosts(_ context.Context, n int, collections []string) ([]
 		return nil, ErrPoolNotFound
 	}
 
-	// return configured number of hosts, or all of them
+	// return requested number of hosts, or all of them
 	l := min(n, len(pool.hosts.Pool()))
 	return pool.get(l)
 }

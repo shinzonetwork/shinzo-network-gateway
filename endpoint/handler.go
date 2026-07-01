@@ -61,6 +61,16 @@ type hostResponse struct {
 	err      error
 }
 
+// extensions is a copy of Extensions from https://github.com/shinzonetwork/shinzo-querysig/blob/main/billing/
+// The entire dependency tree of shinozo-querysig is to huge to import.
+type extensions struct {
+	RequestSignature string `json:"request_signature"`
+	Nonce            string `json:"nonce"`
+	QueryHash        string `json:"query_hash"`
+	RequestTimestamp uint64 `json:"request_timestamp"`
+	Fanout           int    `json:"fanout"`
+}
+
 // NewHandler creates new Handler instance.
 func NewHandler(validators []Validator, extractor CollectionsExtractor, selector HostsSelector, defaultSampleSize int, logger *zap.Logger) *Handler {
 	transport := &http.Transport{
@@ -130,7 +140,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n := h.getHostsNumber(gqlReq.Extensions)
+	n, err := h.getFanout(gqlReq.Extensions)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid extensions", contentType)
+		return
+	}
 	hosts, err := h.selector.SelectHosts(r.Context(), n, collections)
 	if err != nil {
 		h.writeError(w, http.StatusServiceUnavailable, err.Error(), contentType)
@@ -142,11 +156,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.composeResponse(w, responses, contentType)
 }
 
-func (h *Handler) getHostsNumber(extensions json.RawMessage) int {
-	if extensions != nil {
-		// TODO(tzdybal): read sample size from extensions
+func (h *Handler) getFanout(ext json.RawMessage) (int, error) {
+	fanout := h.defaultSampleSize
+	if ext != nil {
+		var deserialized extensions
+		err := json.Unmarshal(ext, &deserialized)
+		if err != nil {
+			return 0, err
+		}
+		if deserialized.Fanout > 0 {
+			fanout = deserialized.Fanout
+		}
 	}
-	return h.defaultSampleSize
+	return fanout, nil
 }
 
 func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body []byte, hostHeader, authHeader string) []hostResponse {

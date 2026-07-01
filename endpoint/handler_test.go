@@ -373,6 +373,39 @@ func TestHandler(t *testing.T) {
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
 		},
+		{
+			name: "fanout from extensions overrides default sample size",
+			body: `{"query":"{ hero { name } }","extensions":{"fanout":5}}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			setupSelector: func(sel *mockSelector, hosts []host.Host) {
+				sel.On("SelectHosts", mock.Anything, 5, []string{"hero"}).Return(hosts, nil)
+			},
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
+		},
+		{
+			name: "zero fanout in extensions falls back to default sample size",
+			body: `{"query":"{ hero { name } }","extensions":{"fanout":0}}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			setupSelector: func(sel *mockSelector, hosts []host.Host) {
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
+			},
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
+		},
+		{
+			name: "malformed extensions is a bad request",
+			body: `{"query":"{ hero { name } }","extensions":"not an object"}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: "invalid extensions",
+		},
 	}
 
 	for _, c := range cases {
