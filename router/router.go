@@ -10,11 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	// TODO(tzdybal): this has to be configurable.
-	sampleSize = 3
-)
-
 var (
 	// ErrPoolNotSupported is returned if requested type of pool is not supported by Router.
 	ErrPoolNotSupported = errors.New("only single-collection pools are supported")
@@ -46,7 +41,7 @@ func New(logger *zap.Logger) *Router {
 }
 
 // SelectHosts finds the hosts that serve all the collections, and return random sample.
-func (r *Router) SelectHosts(_ context.Context, collections []string) ([]host.Host, error) {
+func (r *Router) SelectHosts(_ context.Context, n int, collections []string) ([]host.Host, error) {
 	if len(collections) != 1 {
 		return nil, ErrPoolNotSupported
 	}
@@ -60,8 +55,8 @@ func (r *Router) SelectHosts(_ context.Context, collections []string) ([]host.Ho
 		return nil, ErrPoolNotFound
 	}
 
-	// return configured number of hosts, or all of them
-	l := min(sampleSize, len(pool.hosts.Pool()))
+	// return requested number of hosts, or all of them
+	l := min(n, len(pool.hosts.Pool()))
 	return pool.get(l)
 }
 

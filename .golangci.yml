@@ -46,6 +46,7 @@ linters:
   settings:
     funlen:
       lines: 100
+      statements: 50
     revive:
       enable-default-rules: true
       rules:
