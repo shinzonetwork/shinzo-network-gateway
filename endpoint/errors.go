@@ -31,6 +31,31 @@ type gqlLocation struct {
 // ErrEmptyQuery is returned if GraphQL query is empty.
 var ErrEmptyQuery = errors.New("empty GraphQL query")
 
+// ErrParse is returned if GraphQL query cannot be parsed.
+var ErrParse = errors.New("GraphQL parse error")
+
+// ErrValidation is returned when a GraphQL query fails validation.
+var ErrValidation = errors.New("validation failed")
+
+// ErrMissingLimit is returned when a root field is missing a required limit argument.
+var ErrMissingLimit = errors.New("limit not specified")
+
+// ErrInvalidLimit is returned when a limit argument is present but invalid:
+// not a positive 32-bit integer literal, duplicated, or exceeding the maximum.
+var ErrInvalidLimit = errors.New("invalid limit")
+
+// ErrMissingOrder is returned when a root field is missing a required order argument.
+var ErrMissingOrder = errors.New("order not specified")
+
+// ErrInvalidOrder is returned when an order argument is present but invalid:
+// not a DefraDB-compatible object/list of single-field {field: ASC|DESC}
+// conditions, duplicated, or carrying an unknown direction.
+var ErrInvalidOrder = errors.New("invalid order")
+
+// ErrUnsupportedSelection is returned when a root selection is not a plain field
+// (a fragment spread or inline fragment).
+var ErrUnsupportedSelection = errors.New("unsupported root selection")
+
 // ErrHostHTTP is returned when an upstream host responds with a non-2xx status.
 var ErrHostHTTP = errors.New("host HTTP error")
 

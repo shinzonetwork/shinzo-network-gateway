@@ -125,6 +125,17 @@ func TestDefaultCollectionsExtractor(t *testing.T) {
 			}`,
 			expected: []string{"hero"},
 		},
+		{
+			name: "root fragment spread is rejected",
+			query: `{ ...Roots }
+			fragment Roots on Query { hero { name } }`,
+			err: true,
+		},
+		{
+			name:  "root inline fragment is rejected",
+			query: `{ ... on Query { hero { name } } }`,
+			err:   true,
+		},
 	}
 
 	for _, c := range cases {
@@ -132,14 +143,19 @@ func TestDefaultCollectionsExtractor(t *testing.T) {
 			t.Parallel()
 
 			extr := &DefaultCollectionExtractor{}
-			collections, err := extr.ExtractCollections(c.query)
+			query, err := parseQuery(c.query)
+
+			var collections []string
+			if err == nil {
+				collections, err = extr.ExtractCollections(query)
+			}
 
 			if c.err {
 				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.ElementsMatch(t, collections, c.expected)
+				return
 			}
+			require.NoError(t, err)
+			require.ElementsMatch(t, collections, c.expected)
 		})
 	}
 }
