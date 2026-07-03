@@ -153,7 +153,77 @@ type QueryHostResponse struct {
 // Host describes a registered host: its address, DID, and connection details.
 type Host struct {
 	Address          string `json:"address,omitempty"`
-	Did              string `json:"did,omitempty"`
+	DID              string `json:"did,omitempty"`
 	ConnectionString string `json:"connection_string,omitempty"`
 	EndpointAddress  string `json:"endpoint_address,omitempty"`
+}
+
+// View represents a registered view.
+type View struct {
+	Name     string        `json:"name,omitempty"`
+	Creator  string        `json:"creator,omitempty"`
+	Address  string        `json:"address,omitempty"`
+	Data     []byte        `json:"data,omitempty"`
+	Height   uint64        `json:"height,omitempty"`
+	Metadata *ViewMetadata `json:"metadata,omitempty"`
+}
+
+// ViewMetadata is derived from a stored viewbundle.
+type ViewMetadata struct {
+	Query      string             `json:"query,omitempty"`
+	Sdl        string             `json:"sdl,omitempty"`
+	RootType   string             `json:"root_type,omitempty"`
+	Lenses     []ViewLensMetadata `json:"lenses"`
+	ParseError string             `json:"parse_error,omitempty"`
+}
+
+// ViewLensMetadata contains derived metadata for one lens in a viewbundle.
+type ViewLensMetadata struct {
+	ID   uint32 `json:"id,omitempty"`
+	Args string `json:"args,omitempty"`
+	Hash string `json:"hash,omitempty"`
+}
+
+// QueryViewsRequest is the request type for listing registered views.
+// GET /shinzonetwork/view/v1/views
+type QueryViewsRequest struct {
+	Pagination               *PageRequest `json:"pagination,omitempty"`
+	IncludeData              bool         `json:"include_data,omitempty"`
+	SinceBlock               uint64       `json:"since_block,omitempty"`
+	IncludeMetadata          bool         `json:"include_metadata,omitempty"`
+	Name                     string       `json:"name,omitempty"`
+	Creator                  string       `json:"creator,omitempty"`
+	MetadataRootType         string       `json:"metadata_root_type,omitempty"`
+	MetadataLensHash         string       `json:"metadata_lens_hash,omitempty"`
+	MetadataQueryContains    string       `json:"metadata_query_contains,omitempty"`
+	MetadataSdlContains      string       `json:"metadata_sdl_contains,omitempty"`
+	MetadataLensArgsContains string       `json:"metadata_lens_args_contains,omitempty"`
+}
+
+// QueryViewsResponse is the response type for listing registered views.
+type QueryViewsResponse struct {
+	Views      []View        `json:"views"`
+	Pagination *PageResponse `json:"pagination,omitempty"`
+}
+
+// QueryViewRequest is the request type for fetching one registered view.
+// GET /shinzonetwork/view/v1/views/{contract_address}
+type QueryViewRequest struct {
+	ContractAddress string `json:"contract_address,omitempty"`
+	IncludeData     bool   `json:"include_data,omitempty"`
+	IncludeMetadata bool   `json:"include_metadata,omitempty"`
+}
+
+// QueryViewResponse is the response type for fetching one registered view.
+type QueryViewResponse struct {
+	View View `json:"view"`
+}
+
+// QueryViewCountRequest is the request type for counting registered views.
+// GET /shinzonetwork/view/v1/view_count
+type QueryViewCountRequest struct{}
+
+// QueryViewCountResponse is the response type for counting registered views.
+type QueryViewCountResponse struct {
+	Count uint64 `json:"count,omitempty"`
 }

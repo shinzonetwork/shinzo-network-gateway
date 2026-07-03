@@ -43,7 +43,7 @@ func TestGetHosts(t *testing.T) {
 	// this is hardcoded from the fixture
 	first := resp.Hosts[0]
 	require.Equal(t, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", first.Address)
-	require.Equal(t, "did:key:z7r8otXUgTfe4Z7QwqKreVS4D3vh7AiuWKuFWSctr596B16NBTByoVoScoQN4GgwfjDicLqTpwTkEJjJbvEEWf8dPDCrU", first.Did)
+	require.Equal(t, "did:key:z7r8otXUgTfe4Z7QwqKreVS4D3vh7AiuWKuFWSctr596B16NBTByoVoScoQN4GgwfjDicLqTpwTkEJjJbvEEWf8dPDCrU", first.DID)
 	require.Equal(t, "192.168.1.1:8080", first.ConnectionString)
 	require.Equal(t, "https://192.168.1.1/api/v0/graphql", first.EndpointAddress)
 

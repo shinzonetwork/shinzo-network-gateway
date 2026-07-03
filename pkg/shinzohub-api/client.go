@@ -76,6 +76,41 @@ func (c *Client) GetPoolDetail(ctx context.Context, poolAddress string, paginati
 	return doRequest[QueryDetailResponse](ctx, c, path, pagination)
 }
 
+// GetPoolDetails returns the paginated list of pools together with their hosts and demands.
+func (c *Client) GetPoolDetails(ctx context.Context, pagination *PageRequest) (*QueryDetailsResponse, error) {
+	return doRequest[QueryDetailsResponse](ctx, c, "shinzonetwork/host/v1/details", pagination)
+}
+
+// GetPoolHosts returns the paginated list of hosts belonging to a pool, identified by the pool address.
+func (c *Client) GetPoolHosts(ctx context.Context, poolAddress string, pagination *PageRequest) (*QueryPoolHostsResponse, error) {
+	path := fmt.Sprintf("shinzonetwork/host/v1/pools/%s/hosts", poolAddress)
+	return doRequest[QueryPoolHostsResponse](ctx, c, path, pagination)
+}
+
+// GetHost returns a single host identified by its address.
+func (c *Client) GetHost(ctx context.Context, address string, pagination *PageRequest) (*QueryHostResponse, error) {
+	path := fmt.Sprintf("shinzonetwork/host/v1/host/%s", address)
+	return doRequest[QueryHostResponse](ctx, c, path, pagination)
+}
+
+// GetViews returns the paginated list of registered views.
+// TODO(tzdybal): impelmeent full filtering from QueryViewsRequest.
+func (c *Client) GetViews(ctx context.Context, pagination *PageRequest) (*QueryViewsResponse, error) {
+	return doRequest[QueryViewsResponse](ctx, c, "shinzonetwork/view/v1/views", pagination)
+}
+
+// GetView returns a single view identified by its contract address.
+// TODO(tzdybal): impelmeent full filtering from QueryViewRequest.
+func (c *Client) GetView(ctx context.Context, contractAddress string, pagination *PageRequest) (*QueryViewResponse, error) {
+	path := fmt.Sprintf("shinzonetwork/view/v1/views/%s", contractAddress)
+	return doRequest[QueryViewResponse](ctx, c, path, pagination)
+}
+
+// GetViewCount returns the total number of registered views.
+func (c *Client) GetViewCount(ctx context.Context) (*QueryViewCountResponse, error) {
+	return doRequest[QueryViewCountResponse](ctx, c, "shinzonetwork/view/v1/view_count", nil)
+}
+
 func doRequest[RespT any](ctx context.Context, c *Client, path string, pagination *PageRequest) (*RespT, error) {
 	fullPath, err := url.JoinPath(c.baseURL, path)
 	if err != nil {
