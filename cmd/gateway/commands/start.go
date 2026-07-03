@@ -31,7 +31,7 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 	}
 	cmd.Flags().String(flagListen, defaultListenAddr, "HTTP listen address for GraphQL endpoint")
 	cmd.Flags().Int(flagSample, defaultSampleSize, "number of hosts for query fan out")
-	cmd.Flags().String(flagShinzohubURL, "", "URL of Shinzohub node to get data from")
+	cmd.Flags().String(flagShinzohubURL, "", "Base URL of the Shinzohub API to fetch information from")
 
 	err := a.v.BindPFlags(cmd.Flags())
 	if err != nil {
