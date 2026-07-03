@@ -1,0 +1,39 @@
+
+  {
+    "detail": {
+      "pool": {
+        "pool_address": "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92",
+        "view_address": "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97",
+        "config": { "window_size": "256" },
+        "created_at": "1024"
+      },
+      "hosts": [
+        {
+          "pool_address": "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92",
+          "host_address": "shinzo1nk9z4r3vq8x5acjs0w8tg3hp9lqz1bd2mn7k9",
+          "host": { "joined_at": "1090" }
+        }
+      ],
+      "demands": [
+        {
+          "pool_address": "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92",
+          "registrant_address": "shinzo1dev3k9c2x7r0qy4m8v5zn6jp1ts2gh8dlqmnp",
+          "demand": {
+            "bond": "1000000000000000000",
+            "price_pref": "0",
+            "binding": false,
+            "expires_at": "0"
+          }
+        }
+      ],
+      "stats": {
+        "pool_address": "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92",
+        "price": "100000000000000",
+        "utilization": "73",
+        "total_queries": "184920",
+        "total_rewards": "46230000",
+        "last_updated_epoch": "412"
+      },
+      "is_active": true
+    }
+  }
