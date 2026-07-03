@@ -26,6 +26,7 @@ type ShinzohubCollectionsFetcher struct {
 
 var _ CollectionsFetcher = &ShinzohubCollectionsFetcher{}
 
+// NewShinzohubCollectionsFetcher creates ShinzohubCollectionsFetcher instance configured to read data every refreshInterval from baseURL.
 func NewShinzohubCollectionsFetcher(baseURL string, refreshInterval time.Duration, logger *zap.Logger) (*ShinzohubCollectionsFetcher, error) {
 	return &ShinzohubCollectionsFetcher{
 		client:          shinzohub.NewClient(baseURL),
@@ -35,6 +36,11 @@ func NewShinzohubCollectionsFetcher(baseURL string, refreshInterval time.Duratio
 	}, nil
 }
 
+// FetchCollections retrieves the list of collections served by a host.
+// This information is build using following information:
+// - viewAddress -> collection name is retrieved from /views endpoint,
+// - hostAddress -> endpointAddress is retrieved from /hosts endpoint,
+// - pools information is retrieved from /details endpoint.
 func (f *ShinzohubCollectionsFetcher) FetchCollections(ctx context.Context, h Host) ([]string, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
