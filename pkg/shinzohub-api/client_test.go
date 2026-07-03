@@ -25,7 +25,9 @@ func TestGetHosts(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -81,7 +83,9 @@ func TestGetAllHosts(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -112,7 +116,9 @@ func TestGetHost(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -143,7 +149,9 @@ func TestGetPoolDetail(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -199,7 +207,9 @@ func TestGetPoolDetails(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -239,7 +249,9 @@ func TestGetPoolHosts(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -275,7 +287,9 @@ func TestGetPools(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -312,7 +326,9 @@ func TestGetPool(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -343,7 +359,9 @@ func TestGetViews(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -381,7 +399,9 @@ func TestGetView(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(srv.URL)
+	client, err := NewClient(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
