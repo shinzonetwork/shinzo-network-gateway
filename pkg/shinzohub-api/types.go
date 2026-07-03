@@ -185,7 +185,7 @@ type ViewLensMetadata struct {
 }
 
 // QueryViewsRequest is the request type for listing registered views.
-// GET /shinzonetwork/view/v1/views
+// GET /shinzonetwork/view/v1/views.
 type QueryViewsRequest struct {
 	Pagination               *PageRequest `json:"pagination,omitempty"`
 	IncludeData              bool         `json:"include_data,omitempty"`
@@ -207,7 +207,7 @@ type QueryViewsResponse struct {
 }
 
 // QueryViewRequest is the request type for fetching one registered view.
-// GET /shinzonetwork/view/v1/views/{contract_address}
+// GET /shinzonetwork/view/v1/views/{contract_address}.
 type QueryViewRequest struct {
 	ContractAddress string `json:"contract_address,omitempty"`
 	IncludeData     bool   `json:"include_data,omitempty"`
@@ -220,7 +220,7 @@ type QueryViewResponse struct {
 }
 
 // QueryViewCountRequest is the request type for counting registered views.
-// GET /shinzonetwork/view/v1/view_count
+// GET /shinzonetwork/view/v1/view_count.
 type QueryViewCountRequest struct{}
 
 // QueryViewCountResponse is the response type for counting registered views.
