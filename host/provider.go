@@ -9,8 +9,9 @@ import (
 	"slices"
 	"time"
 
-	shinzohub "github.com/shinzonetwork/shinzo-network-gateway/pkg/shinzohub-api"
 	"go.uber.org/zap"
+
+	shinzohub "github.com/shinzonetwork/shinzo-network-gateway/pkg/shinzohub-api"
 )
 
 // Provider calls register and deregister callbacks to notify when hosts are registered/deregistered.
