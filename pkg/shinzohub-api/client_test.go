@@ -91,8 +91,8 @@ func TestGetAllHosts(t *testing.T) {
 	require.Equal(t, []string{"", keyA, keyB}, gotKeys)
 
 	// every page was accumulated (10 + 10 + 4)
-	require.Len(t, resp.Hosts, 24)
-	require.Equal(t, "shinzo12hu78xu3cu78l7fwkrfdk4sve0vfurcelu5k69", resp.Hosts[0].Address)
-	require.Equal(t, "shinzo1dsgl8h0n9dy6qgdcqsphw86k3gr84zpdy8dkq0", resp.Hosts[10].Address)
-	require.Equal(t, "shinzo1v4pjtn3tkrv73ep3djhf8ly24fy6m8vdvt5fcz", resp.Hosts[20].Address)
+	require.Len(t, resp, 24)
+	require.Equal(t, "shinzo12hu78xu3cu78l7fwkrfdk4sve0vfurcelu5k69", resp[0].Address)
+	require.Equal(t, "shinzo1dsgl8h0n9dy6qgdcqsphw86k3gr84zpdy8dkq0", resp[10].Address)
+	require.Equal(t, "shinzo1v4pjtn3tkrv73ep3djhf8ly24fy6m8vdvt5fcz", resp[20].Address)
 }

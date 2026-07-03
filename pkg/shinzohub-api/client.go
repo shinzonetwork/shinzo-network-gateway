@@ -39,29 +39,24 @@ func (c *Client) GetHosts(ctx context.Context, pagination *PageRequest) (*QueryH
 }
 
 // GetAllHosts fetches every host by following pagination cursors until exhausted.
-func (c *Client) GetAllHosts(ctx context.Context) (*QueryHostsResponse, error) {
-	allResp := &QueryHostsResponse{}
-	key := ""
-	for {
-		resp, err := c.GetHosts(ctx, &PageRequest{Key: key, Limit: defaultPageSize})
-		if err != nil {
-			return nil, err
-		}
-		allResp.Hosts = append(allResp.Hosts, resp.Hosts...)
-
-		if resp.Pagination != nil && len(resp.Pagination.NextKey) > 0 {
-			key = resp.Pagination.NextKey
-		} else {
-			break
-		}
+func (c *Client) GetAllHosts(ctx context.Context) ([]Host, error) {
+	extractor := func(resp *QueryHostsResponse) ([]Host, *PageResponse) {
+		return resp.Hosts, resp.Pagination
 	}
-
-	return allResp, nil
+	return getAll(ctx, c.GetHosts, extractor)
 }
 
 // GetPools returns the paginated list of pools.
 func (c *Client) GetPools(ctx context.Context, pagination *PageRequest) (*QueryPoolsResponse, error) {
 	return doRequest[QueryPoolsResponse](ctx, c, "shinzonetwork/host/v1/pools", pagination)
+}
+
+// GetAllPools fetches every pool by following pagination cursors until exhausted.
+func (c *Client) GetAllPools(ctx context.Context) ([]Pool, error) {
+	extractor := func(resp *QueryPoolsResponse) ([]Pool, *PageResponse) {
+		return resp.Pools, resp.Pagination
+	}
+	return getAll(ctx, c.GetPools, extractor)
 }
 
 // GetPool returns a single pool identified by its address.
@@ -81,10 +76,29 @@ func (c *Client) GetPoolDetails(ctx context.Context, pagination *PageRequest) (*
 	return doRequest[QueryDetailsResponse](ctx, c, "shinzonetwork/host/v1/details", pagination)
 }
 
+// GetAllPoolDetails fetches every pool detail by following pagination cursors until exhausted.
+func (c *Client) GetAllPoolDetails(ctx context.Context) ([]PoolDetail, error) {
+	extractor := func(resp *QueryDetailsResponse) ([]PoolDetail, *PageResponse) {
+		return resp.Details, resp.Pagination
+	}
+	return getAll(ctx, c.GetPoolDetails, extractor)
+}
+
 // GetPoolHosts returns the paginated list of hosts belonging to a pool, identified by the pool address.
 func (c *Client) GetPoolHosts(ctx context.Context, poolAddress string, pagination *PageRequest) (*QueryPoolHostsResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pools/%s/hosts", poolAddress)
 	return doRequest[QueryPoolHostsResponse](ctx, c, path, pagination)
+}
+
+// GetAllPoolHosts fetches every host of a pool by following pagination cursors until exhausted.
+func (c *Client) GetAllPoolHosts(ctx context.Context, poolAddress string) ([]PoolHostEntry, error) {
+	fetch := func(ctx context.Context, pagination *PageRequest) (*QueryPoolHostsResponse, error) {
+		return c.GetPoolHosts(ctx, poolAddress, pagination)
+	}
+	extractor := func(resp *QueryPoolHostsResponse) ([]PoolHostEntry, *PageResponse) {
+		return resp.Hosts, resp.Pagination
+	}
+	return getAll(ctx, fetch, extractor)
 }
 
 // GetHost returns a single host identified by its address.
@@ -99,16 +113,19 @@ func (c *Client) GetViews(ctx context.Context, pagination *PageRequest) (*QueryV
 	return doRequest[QueryViewsResponse](ctx, c, "shinzonetwork/view/v1/views", pagination)
 }
 
+// GetAllViews fetches every view by following pagination cursors until exhausted.
+func (c *Client) GetAllViews(ctx context.Context) ([]View, error) {
+	extractor := func(resp *QueryViewsResponse) ([]View, *PageResponse) {
+		return resp.Views, resp.Pagination
+	}
+	return getAll(ctx, c.GetViews, extractor)
+}
+
 // GetView returns a single view identified by its contract address.
 // TODO(tzdybal): impelmeent full filtering from QueryViewRequest.
 func (c *Client) GetView(ctx context.Context, contractAddress string, pagination *PageRequest) (*QueryViewResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/view/v1/views/%s", contractAddress)
 	return doRequest[QueryViewResponse](ctx, c, path, pagination)
-}
-
-// GetViewCount returns the total number of registered views.
-func (c *Client) GetViewCount(ctx context.Context) (*QueryViewCountResponse, error) {
-	return doRequest[QueryViewCountResponse](ctx, c, "shinzonetwork/view/v1/view_count", nil)
 }
 
 func doRequest[RespT any](ctx context.Context, c *Client, path string, pagination *PageRequest) (*RespT, error) {
@@ -158,4 +175,30 @@ func prepareRequest(req *http.Request, pagination *PageRequest) {
 	}
 
 	req.Header.Set("Accept", "application/json")
+}
+
+func getAll[T, RespT any](
+	ctx context.Context,
+	fetch func(context.Context, *PageRequest) (*RespT, error),
+	extract func(*RespT) ([]T, *PageResponse),
+) ([]T, error) {
+	var all []T
+	key := ""
+
+	for {
+		resp, err := fetch(ctx, &PageRequest{Key: key, Limit: defaultPageSize})
+		if err != nil {
+			return nil, err
+		}
+		items, pagination := extract(resp)
+		all = append(all, items...)
+
+		if pagination != nil && len(pagination.NextKey) > 0 {
+			key = pagination.NextKey
+		} else {
+			break
+		}
+	}
+
+	return all, nil
 }
