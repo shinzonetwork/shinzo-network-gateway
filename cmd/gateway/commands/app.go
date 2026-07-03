@@ -16,9 +16,10 @@ const (
 	defaultListenAddr          = ":8080"
 	defaultSampleSize          = 3
 
-	flagListen  = "listen"
-	flagSample  = "sample-size"
-	flagTimeout = "timeout"
+	flagListen       = "listen"
+	flagSample       = "sample-size"
+	flagTimeout      = "timeout"
+	flagShinzohubURL = "shinzohub-url"
 )
 
 // App is the main application struct holding configuration state.

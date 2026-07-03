@@ -102,7 +102,9 @@ func TestShinzohubProvider(t *testing.T) {
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 
-	provider := NewShinzohubProvider(srv.URL)
+	provider, err := NewShinzohubProvider(srv.URL)
+	require.NoError(t, err)
+	require.NotNil(t, provider)
 	provider.SetLogger(logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)

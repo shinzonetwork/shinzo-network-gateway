@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"slices"
 	"time"
@@ -71,7 +72,8 @@ func (p *FileProvider) SetLogger(logger *zap.Logger) {
 
 // ShinzohubProvider reads host information from shinzohub using REST.
 type ShinzohubProvider struct {
-	client *shinzohub.Client
+	baseURL string
+	client  *shinzohub.Client
 
 	hosts []Host
 
@@ -87,15 +89,20 @@ const (
 )
 
 // NewShinzohubProvider creates a ShinzohubProvider that reads hosts from given shinzohub endpoint.
-func NewShinzohubProvider(baseURL string) *ShinzohubProvider {
-	return &ShinzohubProvider{
-		client: shinzohub.NewClient(baseURL),
+func NewShinzohubProvider(baseURL string) (*ShinzohubProvider, error) {
+	// ParseRequestURI is more strict and rejects "", relative paths, etc
+	if _, err := url.ParseRequestURI(baseURL); err != nil {
+		return nil, err
 	}
+	return &ShinzohubProvider{
+		baseURL: baseURL,
+		client:  shinzohub.NewClient(baseURL),
+	}, nil
 }
 
 // Run gets all hosts from shinzohub periodically and fires events when host set changes.
 func (p *ShinzohubProvider) Run(ctx context.Context, register func(Host), deregister func(Host)) error {
-	p.logger.Sugar().Info("starting")
+	p.logger.Sugar().Infow("starting", "baseURL", p.baseURL)
 
 	// update hosts immediately
 	p.updateHosts(ctx, register, deregister)
