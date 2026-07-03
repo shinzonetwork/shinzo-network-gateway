@@ -21,7 +21,10 @@ import (
 const shutdownTimeout = 30 * time.Second
 
 // TODO(tzdybal): add configuration option.
-const maxLimit = 100_000
+const (
+	maxLimit               = 100_000
+	defaultRefreshInterval = 30 * time.Second
+)
 
 func (a *App) newStartCmd() (*cobra.Command, error) {
 	cmd := &cobra.Command{
@@ -58,13 +61,17 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	// TODO(tzdybal): config/env/flag for host file
 	fileProvider := host.NewFileProvider("hosts.txt", logger)
 
-	shinzohubProvider, err := host.NewShinzohubProvider(a.v.GetString(flagShinzohubURL), logger)
+	shinzoURL := a.v.GetString(flagShinzohubURL)
+	shinzohubProvider, err := host.NewShinzohubProvider(shinzoURL, logger)
 	if err != nil {
 		return fmt.Errorf("error while creating Shinzohub provider: %w", err)
 	}
 
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
-	collFetcher := host.NewHTTPCollectionsFetcher(defaultTimeout, logger)
+	collFetcher, err := host.NewShinzohubCollectionsFetcher(shinzoURL, defaultRefreshInterval, logger)
+	if err != nil {
+		return fmt.Errorf("error while creating Shinzohub collections fetcher: %w", err)
+	}
 
 	rtr := router.New(logger)
 	registry := host.NewRegistry(

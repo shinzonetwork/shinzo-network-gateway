@@ -30,11 +30,15 @@ type Client struct {
 }
 
 // NewClient creates new Shinzohub API client.
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL string) (*Client, error) {
+	// ParseRequestURI is more strict and rejects "", relative paths, etc
+	if _, err := url.ParseRequestURI(baseURL); err != nil {
+		return nil, err
+	}
 	return &Client{
 		baseURL: baseURL,
 		client:  &http.Client{Timeout: DefaultTimeout},
-	}
+	}, nil
 }
 
 // GetHosts returns the paginated list of hosts known to the network.

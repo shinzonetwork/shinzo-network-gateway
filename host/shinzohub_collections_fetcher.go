@@ -28,8 +28,12 @@ var _ CollectionsFetcher = &ShinzohubCollectionsFetcher{}
 
 // NewShinzohubCollectionsFetcher creates ShinzohubCollectionsFetcher instance configured to read data every refreshInterval from baseURL.
 func NewShinzohubCollectionsFetcher(baseURL string, refreshInterval time.Duration, logger *zap.Logger) (*ShinzohubCollectionsFetcher, error) {
+	c, err := shinzohub.NewClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
 	return &ShinzohubCollectionsFetcher{
-		client:          shinzohub.NewClient(baseURL),
+		client:          c,
 		refreshInterval: refreshInterval,
 		collections:     make(map[Host][]string),
 		logger:          logger.Named("shinzohub-collections-fetcher"),
