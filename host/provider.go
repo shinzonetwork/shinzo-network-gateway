@@ -147,7 +147,7 @@ func (p *ShinzohubProvider) fetchHosts(ctx context.Context) ([]Host, error) {
 	hosts := make([]Host, 0, len(resp))
 
 	for _, h := range resp {
-		hosts = append(hosts, Host(h.ConnectionString))
+		hosts = append(hosts, Host(h.EndpointAddress))
 	}
 
 	slices.Sort(hosts)
