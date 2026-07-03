@@ -347,7 +347,7 @@ func TestGetViews(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.GetViews(ctx, nil)
+	resp, err := client.GetViews(ctx, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -385,7 +385,7 @@ func TestGetView(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.GetView(ctx, "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97")
+	resp, err := client.GetView(ctx, "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97", nil)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
