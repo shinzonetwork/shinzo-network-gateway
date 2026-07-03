@@ -26,6 +26,7 @@ func TestShinzohubCollectionsFetcher(t *testing.T) {
           "views": [
             {"name": "block_view", "creator": "c1", "address": "0xVIEW_BLOCK", "height": "1", "metadata": {"root_type": "Block"}},
             {"name": "tx_view", "creator": "c1", "address": "0xVIEW_TX", "height": "1", "metadata": {"root_type": "Transaction"}}
+          ],
           "pagination": {"next_key": null, "total": "2"}
         }`
 
@@ -64,10 +65,10 @@ func TestShinzohubCollectionsFetcher(t *testing.T) {
 	}`
 
 	srv := newTestServer(t, map[string]string{
-		"/shinzonetwork/view/v1/views":                       viewsJSONNoMetadata,
-		"/shinzonetwork/view/v1/views?include_metadata=true": viewsJSONWithMetadata,
-		"/shinzonetwork/host/v1/hosts":                       hostsJSON,
-		"/shinzonetwork/host/v1/details":                     detailsJSON,
+		"/shinzonetwork/view/v1/views":      viewsJSONNoMetadata,
+		"/shinzonetwork/view/v1/views?meta": viewsJSONWithMetadata, // the ?meta is special placeholder; it's set if include_metadata=true in actual request
+		"/shinzonetwork/host/v1/hosts":      hostsJSON,
+		"/shinzonetwork/host/v1/details":    detailsJSON,
 	})
 	defer srv.Close()
 
@@ -93,7 +94,12 @@ func TestShinzohubCollectionsFetcher(t *testing.T) {
 func newTestServer(t *testing.T, routes map[string]string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, ok := routes[r.URL.Path]
+		path := r.URL.Path
+		// this is a special test case
+		if r.URL.Query().Has("include_metadata") {
+			path += "?meta"
+		}
+		body, ok := routes[path]
 		require.True(t, ok, "unexpected path %q", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
