@@ -15,79 +15,145 @@ type PageResponse struct {
 	Total   string `json:"total,omitempty"`
 }
 
-// HostsResponse is the response from the hosts listing endpoint.
-type HostsResponse struct {
-	Hosts      []Host        `json:"hosts"`
-	Pagination *PageResponse `json:"pagination,omitempty"`
+// QueryPoolsRequest is the request for GET /shinzonetwork/pool/v1/pools.
+type QueryPoolsRequest struct {
+	Pagination *PageRequest `json:"pagination,omitempty"`
 }
 
-// Host describes a single host in the network.
-type Host struct {
-	Address          string `json:"address"`
-	DID              string `json:"did"`
-	ConnectionString string `json:"connection_string"`
-	EndpointAddress  string `json:"endpoint_address"`
-}
-
-// PoolsResponse is the response from the pools listing endpoint.
-type PoolsResponse struct {
+// QueryPoolsResponse is the response for GET /shinzonetwork/pool/v1/pools.
+type QueryPoolsResponse struct {
 	Pools      []Pool        `json:"pools"`
 	Pagination *PageResponse `json:"pagination,omitempty"`
 }
 
-// PoolResponse wraps a single pool, returned by the pool-by-address endpoint.
-type PoolResponse struct {
+// QueryPoolRequest is the request for GET /shinzonetwork/pool/v1/pool/{pool_address}.
+type QueryPoolRequest struct {
+	PoolAddress string `json:"pool_address,omitempty"`
+}
+
+// QueryPoolResponse is the response for GET /shinzonetwork/pool/v1/pool/{pool_address}.
+type QueryPoolResponse struct {
 	Pool Pool `json:"pool"`
 }
 
-// PoolDetailResponse wraps a pool's detail.
-type PoolDetailResponse struct {
+// QueryDetailRequest is the request for GET /shinzonetwork/pool/v1/pool/{pool_address}/detail.
+type QueryDetailRequest struct {
+	PoolAddress string `json:"pool_address,omitempty"`
+}
+
+// QueryDetailResponse is the response for GET /shinzonetwork/pool/v1/pool/{pool_address}/detail.
+type QueryDetailResponse struct {
 	Detail PoolDetail `json:"detail"`
 }
 
-// PoolDetail describes a pool together with its hosts and demands.
-type PoolDetail struct {
-	Pool    Pool          `json:"pool"`
-	Hosts   []PoolHost    `json:"hosts"`
-	Demands []DemandEntry `json:"demands"`
+// QueryDetailsRequest is the request for GET /shinzonetwork/pool/v1/details.
+type QueryDetailsRequest struct {
+	Pagination *PageRequest `json:"pagination,omitempty"`
 }
 
-// Pool holds the on-chain pool record.
+// QueryDetailsResponse is the response for GET /shinzonetwork/pool/v1/details.
+type QueryDetailsResponse struct {
+	Details    []PoolDetail  `json:"details"`
+	Pagination *PageResponse `json:"pagination,omitempty"`
+}
+
+// QueryPoolHostsRequest is the request for GET /shinzonetwork/pool/v1/pools/{pool_address}/hosts.
+type QueryPoolHostsRequest struct {
+	PoolAddress string       `json:"pool_address,omitempty"`
+	Pagination  *PageRequest `json:"pagination,omitempty"`
+}
+
+// QueryPoolHostsResponse is the response for GET /shinzonetwork/pool/v1/pools/{pool_address}/hosts.
+type QueryPoolHostsResponse struct {
+	Hosts      []PoolHostEntry `json:"hosts"`
+	Pagination *PageResponse   `json:"pagination,omitempty"`
+}
+
+// Pool describes a query pool: its addresses, configuration, and creation time.
 type Pool struct {
-	PoolAddress string     `json:"pool_address"`
-	ViewAddress string     `json:"view_address"`
+	PoolAddress string     `json:"pool_address,omitempty"`
+	ViewAddress string     `json:"view_address,omitempty"`
 	Config      PoolConfig `json:"config"`
-	CreatedAt   string     `json:"created_at"`
+	CreatedAt   int64      `json:"created_at,omitempty"`
 }
 
-// PoolConfig holds the pool configuration parameters.
+// PoolConfig holds tunable parameters for a Pool.
 type PoolConfig struct {
-	WindowSize string `json:"window_size"`
+	WindowSize uint64 `json:"window_size,omitempty"`
 }
 
-// PoolHost associates a host with the pool it joined.
+// PoolDetail aggregates a Pool with its hosts, demand entries, and stats.
+type PoolDetail struct {
+	Pool    Pool              `json:"pool"`
+	Hosts   []PoolHostEntry   `json:"hosts"`
+	Demands []PoolDemandEntry `json:"demands"`
+	Stats   PoolStats         `json:"stats"`
+	// NEW: true when pool has >= MinHostsForActive hosts; derived from len(hosts), not stored
+	IsActive bool `json:"is_active,omitempty"`
+}
+
+// PoolStats holds derived metrics for a Pool.
+type PoolStats struct {
+	PoolAddress      string `json:"pool_address,omitempty"`
+	Price            string `json:"price,omitempty"`
+	Utilization      uint64 `json:"utilization,omitempty"`
+	TotalQueries     uint64 `json:"total_queries,omitempty"`
+	TotalRewards     string `json:"total_rewards,omitempty"`
+	LastUpdatedEpoch uint64 `json:"last_updated_epoch,omitempty"`
+}
+
+// PoolHostEntry associates a host with the pool it belongs to.
+type PoolHostEntry struct {
+	PoolAddress string   `json:"pool_address,omitempty"`
+	HostAddress string   `json:"host_address,omitempty"`
+	Host        PoolHost `json:"host"`
+}
+
+// PoolHost holds host-specific membership data within a pool.
 type PoolHost struct {
-	PoolAddress string         `json:"pool_address"`
-	HostAddress string         `json:"host_address"`
-	Host        HostMembership `json:"host"`
+	JoinedAt int64 `json:"joined_at,omitempty"`
 }
 
-// HostMembership holds per-host membership data within a pool.
-type HostMembership struct {
-	JoinedAt string `json:"joined_at"`
+// PoolDemandEntry associates a registrant's demand with the pool it targets.
+type PoolDemandEntry struct {
+	PoolAddress       string     `json:"pool_address,omitempty"`
+	RegistrantAddress string     `json:"registrant_address,omitempty"`
+	Demand            PoolDemand `json:"demand"`
 }
 
-// DemandEntry associates a demand with the pool and its registrant.
-type DemandEntry struct {
-	PoolAddress       string `json:"pool_address"`
-	RegistrantAddress string `json:"registrant_address"`
-	Demand            Demand `json:"demand"`
+// PoolDemand describes a registrant's bonded demand for a pool.
+type PoolDemand struct {
+	Bond      string `json:"bond,omitempty"`       // sdk.Int as base-10 string
+	PricePref string `json:"price_pref,omitempty"` // sdk.Int base-10 string; "0"/empty = no preference
+	Binding   bool   `json:"binding,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
 }
 
-// Demand holds the terms of a registered demand.
-type Demand struct {
-	Bond      string `json:"bond"`
-	PricePref string `json:"price_pref"`
-	Binding   bool   `json:"binding"`
-	ExpiresAt string `json:"expires_at"`
+// QueryHostsRequest is the request for listing all registered hosts.
+type QueryHostsRequest struct {
+	Pagination *PageRequest `json:"pagination,omitempty"`
+}
+
+// QueryHostsResponse is the response listing all registered hosts.
+type QueryHostsResponse struct {
+	Hosts      []Host        `json:"hosts"`
+	Pagination *PageResponse `json:"pagination,omitempty"`
+}
+
+// QueryHostRequest is the request for looking up a single host by address.
+type QueryHostRequest struct {
+	Address string `json:"address,omitempty"`
+}
+
+// QueryHostResponse is the response for looking up a single host by address.
+type QueryHostResponse struct {
+	Host Host `json:"host"`
+}
+
+// Host describes a registered host: its address, DID, and connection details.
+type Host struct {
+	Address          string `json:"address,omitempty"`
+	Did              string `json:"did,omitempty"`
+	ConnectionString string `json:"connection_string,omitempty"`
+	EndpointAddress  string `json:"endpoint_address,omitempty"`
 }

@@ -34,13 +34,13 @@ func NewClient(baseURL string) *Client {
 }
 
 // GetHosts returns the paginated list of hosts known to the network.
-func (c *Client) GetHosts(ctx context.Context, pagination *PageRequest) (*HostsResponse, error) {
-	return doRequest[HostsResponse](ctx, c, "shinzonetwork/host/v1/hosts", pagination)
+func (c *Client) GetHosts(ctx context.Context, pagination *PageRequest) (*QueryHostsResponse, error) {
+	return doRequest[QueryHostsResponse](ctx, c, "shinzonetwork/host/v1/hosts", pagination)
 }
 
 // GetAllHosts fetches every host by following pagination cursors until exhausted.
-func (c *Client) GetAllHosts(ctx context.Context) (*HostsResponse, error) {
-	allResp := &HostsResponse{}
+func (c *Client) GetAllHosts(ctx context.Context) (*QueryHostsResponse, error) {
+	allResp := &QueryHostsResponse{}
 	key := ""
 	for {
 		resp, err := c.GetHosts(ctx, &PageRequest{Key: key, Limit: defaultPageSize})
@@ -60,20 +60,20 @@ func (c *Client) GetAllHosts(ctx context.Context) (*HostsResponse, error) {
 }
 
 // GetPools returns the paginated list of pools.
-func (c *Client) GetPools(ctx context.Context, pagination *PageRequest) (*PoolsResponse, error) {
-	return doRequest[PoolsResponse](ctx, c, "shinzonetwork/host/v1/pools", pagination)
+func (c *Client) GetPools(ctx context.Context, pagination *PageRequest) (*QueryPoolsResponse, error) {
+	return doRequest[QueryPoolsResponse](ctx, c, "shinzonetwork/host/v1/pools", pagination)
 }
 
 // GetPool returns a single pool identified by its address.
-func (c *Client) GetPool(ctx context.Context, poolAddress string, pagination *PageRequest) (*PoolResponse, error) {
+func (c *Client) GetPool(ctx context.Context, poolAddress string, pagination *PageRequest) (*QueryPoolResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pool/%s", poolAddress)
-	return doRequest[PoolResponse](ctx, c, path, pagination)
+	return doRequest[QueryPoolResponse](ctx, c, path, pagination)
 }
 
 // GetPoolDetail returns a pool together with its hosts and demands, identified by the pool address.
-func (c *Client) GetPoolDetail(ctx context.Context, poolAddress string, pagination *PageRequest) (*PoolDetailResponse, error) {
+func (c *Client) GetPoolDetail(ctx context.Context, poolAddress string, pagination *PageRequest) (*QueryDetailResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pool/%s/detail", poolAddress)
-	return doRequest[PoolDetailResponse](ctx, c, path, pagination)
+	return doRequest[QueryDetailResponse](ctx, c, path, pagination)
 }
 
 func doRequest[RespT any](ctx context.Context, c *Client, path string, pagination *PageRequest) (*RespT, error) {
