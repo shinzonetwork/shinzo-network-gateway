@@ -164,7 +164,7 @@ type View struct {
 	Creator  string        `json:"creator,omitempty"`
 	Address  string        `json:"address,omitempty"`
 	Data     []byte        `json:"data,omitempty"`
-	Height   uint64        `json:"height,omitempty"`
+	Height   uint64        `json:"height,omitempty,string"`
 	Metadata *ViewMetadata `json:"metadata,omitempty"`
 }
 
@@ -189,7 +189,7 @@ type ViewLensMetadata struct {
 type QueryViewsRequest struct {
 	Pagination               *PageRequest `json:"pagination,omitempty"`
 	IncludeData              bool         `json:"include_data,omitempty"`
-	SinceBlock               uint64       `json:"since_block,omitempty"`
+	SinceBlock               uint64       `json:"since_block,omitempty,string"`
 	IncludeMetadata          bool         `json:"include_metadata,omitempty"`
 	Name                     string       `json:"name,omitempty"`
 	Creator                  string       `json:"creator,omitempty"`
@@ -225,5 +225,5 @@ type QueryViewCountRequest struct{}
 
 // QueryViewCountResponse is the response type for counting registered views.
 type QueryViewCountResponse struct {
-	Count uint64 `json:"count,omitempty"`
+	Count uint64 `json:"count,omitempty,string"`
 }
