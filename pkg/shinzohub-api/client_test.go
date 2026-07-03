@@ -52,36 +52,6 @@ func TestGetHosts(t *testing.T) {
 	require.Equal(t, "0", resp.Pagination.Total)
 }
 
-func TestGetHost(t *testing.T) {
-	fixture, err := os.ReadFile("testdata/host.json")
-	require.NoError(t, err)
-
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(fixture)
-	}))
-	defer srv.Close()
-
-	client := NewClient(srv.URL)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	resp, err := client.GetHost(ctx, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", nil)
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-
-	// the request is built correctly
-	require.Equal(t, "/shinzonetwork/host/v1/host/shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", gotPath)
-
-	// the response is decoded correctly
-	require.Equal(t, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", resp.Host.Address)
-	require.Equal(t, "did:key:z7r8otXUgTfe4Z7QwqKreVS4D3vh7AiuWKuFWSctr596B16NBTByoVoScoQN4GgwfjDicLqTpwTkEJjJbvEEWf8dPDCrU", resp.Host.DID)
-	require.Equal(t, "192.168.1.1:8080", resp.Host.ConnectionString)
-	require.Equal(t, "https://192.168.1.1/api/v0/graphql", resp.Host.EndpointAddress)
-}
-
 func TestGetAllHosts(t *testing.T) {
 	// cursor chain extracted from the page fixtures: "" -> keyA -> keyB -> done.
 	const (
@@ -125,4 +95,89 @@ func TestGetAllHosts(t *testing.T) {
 	require.Equal(t, "shinzo12hu78xu3cu78l7fwkrfdk4sve0vfurcelu5k69", resp[0].Address)
 	require.Equal(t, "shinzo1dsgl8h0n9dy6qgdcqsphw86k3gr84zpdy8dkq0", resp[10].Address)
 	require.Equal(t, "shinzo1v4pjtn3tkrv73ep3djhf8ly24fy6m8vdvt5fcz", resp[20].Address)
+}
+
+func TestGetHost(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/host.json")
+	require.NoError(t, err)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.GetHost(ctx, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// the request is built correctly
+	require.Equal(t, "/shinzonetwork/host/v1/host/shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", gotPath)
+
+	// the response is decoded correctly
+	require.Equal(t, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", resp.Host.Address)
+	require.Equal(t, "did:key:z7r8otXUgTfe4Z7QwqKreVS4D3vh7AiuWKuFWSctr596B16NBTByoVoScoQN4GgwfjDicLqTpwTkEJjJbvEEWf8dPDCrU", resp.Host.DID)
+	require.Equal(t, "192.168.1.1:8080", resp.Host.ConnectionString)
+	require.Equal(t, "https://192.168.1.1/api/v0/graphql", resp.Host.EndpointAddress)
+}
+
+func TestGetPoolDetail(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/pool_detail.json")
+	require.NoError(t, err)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.GetPoolDetail(ctx, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// the request is built correctly
+	require.Equal(t, "/shinzonetwork/host/v1/pool/0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92/detail", gotPath)
+
+	// the response is decoded correctly
+	detail := resp.Detail
+	require.True(t, detail.IsActive)
+
+	require.Equal(t, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", detail.Pool.PoolAddress)
+	require.Equal(t, "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97", detail.Pool.ViewAddress)
+	require.EqualValues(t, 256, detail.Pool.Config.WindowSize)
+	require.EqualValues(t, 1024, detail.Pool.CreatedAt)
+
+	require.Len(t, detail.Hosts, 1)
+	host := detail.Hosts[0]
+	require.Equal(t, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", host.PoolAddress)
+	require.Equal(t, "shinzo1nk9z4r3vq8x5acjs0w8tg3hp9lqz1bd2mn7k9", host.HostAddress)
+	require.EqualValues(t, 1090, host.Host.JoinedAt)
+
+	require.Len(t, detail.Demands, 1)
+	demand := detail.Demands[0]
+	require.Equal(t, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", demand.PoolAddress)
+	require.Equal(t, "shinzo1dev3k9c2x7r0qy4m8v5zn6jp1ts2gh8dlqmnp", demand.RegistrantAddress)
+	require.Equal(t, "1000000000000000000", demand.Demand.Bond)
+	require.Equal(t, "0", demand.Demand.PricePref)
+	require.False(t, demand.Demand.Binding)
+	require.EqualValues(t, 0, demand.Demand.ExpiresAt)
+
+	require.Equal(t, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", detail.Stats.PoolAddress)
+	require.Equal(t, "100000000000000", detail.Stats.Price)
+	require.EqualValues(t, 73, detail.Stats.Utilization)
+	require.EqualValues(t, 184920, detail.Stats.TotalQueries)
+	require.Equal(t, "46230000", detail.Stats.TotalRewards)
+	require.EqualValues(t, 412, detail.Stats.LastUpdatedEpoch)
 }

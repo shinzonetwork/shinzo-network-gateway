@@ -74,12 +74,12 @@ type Pool struct {
 	PoolAddress string     `json:"pool_address,omitempty"`
 	ViewAddress string     `json:"view_address,omitempty"`
 	Config      PoolConfig `json:"config"`
-	CreatedAt   int64      `json:"created_at,omitempty"`
+	CreatedAt   int64      `json:"created_at,omitempty,string"`
 }
 
 // PoolConfig holds tunable parameters for a Pool.
 type PoolConfig struct {
-	WindowSize uint64 `json:"window_size,omitempty"`
+	WindowSize uint64 `json:"window_size,omitempty,string"`
 }
 
 // PoolDetail aggregates a Pool with its hosts, demand entries, and stats.
@@ -96,10 +96,10 @@ type PoolDetail struct {
 type PoolStats struct {
 	PoolAddress      string `json:"pool_address,omitempty"`
 	Price            string `json:"price,omitempty"`
-	Utilization      uint64 `json:"utilization,omitempty"`
-	TotalQueries     uint64 `json:"total_queries,omitempty"`
+	Utilization      uint64 `json:"utilization,omitempty,string"`
+	TotalQueries     uint64 `json:"total_queries,omitempty,string"`
 	TotalRewards     string `json:"total_rewards,omitempty"`
-	LastUpdatedEpoch uint64 `json:"last_updated_epoch,omitempty"`
+	LastUpdatedEpoch uint64 `json:"last_updated_epoch,omitempty,string"`
 }
 
 // PoolHostEntry associates a host with the pool it belongs to.
@@ -111,7 +111,7 @@ type PoolHostEntry struct {
 
 // PoolHost holds host-specific membership data within a pool.
 type PoolHost struct {
-	JoinedAt int64 `json:"joined_at,omitempty"`
+	JoinedAt int64 `json:"joined_at,omitempty,string"`
 }
 
 // PoolDemandEntry associates a registrant's demand with the pool it targets.
@@ -126,7 +126,7 @@ type PoolDemand struct {
 	Bond      string `json:"bond,omitempty"`       // sdk.Int as base-10 string
 	PricePref string `json:"price_pref,omitempty"` // sdk.Int base-10 string; "0"/empty = no preference
 	Binding   bool   `json:"binding,omitempty"`
-	ExpiresAt int64  `json:"expires_at,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty,string"`
 }
 
 // QueryHostsRequest is the request for listing all registered hosts.
