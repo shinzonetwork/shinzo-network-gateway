@@ -113,18 +113,18 @@ func (c *Client) GetHost(ctx context.Context, address string) (*QueryHostRespons
 
 // GetViews returns the paginated list of registered views.
 // TODO(tzdybal): impelmeent full filtering from QueryViewsRequest.
-func (c *Client) GetViews(ctx context.Context, pagination *PageRequest, filters *QueryViewsRequest) (*QueryViewsResponse, error) {
-	var params url.Values
-	if filters != nil {
-		params = make(url.Values)
-		if filters.IncludeData {
-			params.Add("include_data", "true")
+func (c *Client) GetViews(ctx context.Context, pagination *PageRequest, params *QueryViewsRequest) (*QueryViewsResponse, error) {
+	var values url.Values
+	if params != nil {
+		values = make(url.Values)
+		if params.IncludeData {
+			values.Set("include_data", "true")
 		}
-		if filters.IncludeMetadata {
-			params.Add("include_metadata", "true")
+		if params.IncludeMetadata {
+			values.Set("include_metadata", "true")
 		}
 	}
-	return doRequest[QueryViewsResponse](ctx, c, "shinzonetwork/view/v1/views", pagination, params)
+	return doRequest[QueryViewsResponse](ctx, c, "shinzonetwork/view/v1/views", pagination, values)
 }
 
 // GetAllViews fetches every view by following pagination cursors until exhausted.
@@ -139,22 +139,22 @@ func (c *Client) GetAllViews(ctx context.Context, filters *QueryViewsRequest) ([
 }
 
 // GetView returns a single view identified by its contract address.
-func (c *Client) GetView(ctx context.Context, contractAddress string, filters *QueryViewRequest) (*QueryViewResponse, error) {
-	var params url.Values
-	if filters != nil {
-		params = make(url.Values)
-		if filters.ContractAddress != "" {
-			params.Add("contract_address", filters.ContractAddress)
+func (c *Client) GetView(ctx context.Context, contractAddress string, params *QueryViewRequest) (*QueryViewResponse, error) {
+	var values url.Values
+	if params != nil {
+		values = make(url.Values)
+		if params.IncludeData {
+			values.Set("include_data", "true")
 		}
-		if filters.IncludeData {
-			params.Add("include_data", "true")
+		if params.IncludeMetadata {
+			values.Set("include_metadata", "true")
 		}
-		if filters.IncludeMetadata {
-			params.Add("include_metadata", "true")
+		if params.IncludeMetadata {
+			values.Set("include_metadata", "true")
 		}
 	}
 	path := fmt.Sprintf("shinzonetwork/view/v1/views/%s", contractAddress)
-	return doRequest[QueryViewResponse](ctx, c, path, nil, params)
+	return doRequest[QueryViewResponse](ctx, c, path, nil, values)
 }
 
 func doRequest[RespT any](ctx context.Context, c *Client, path string, pagination *PageRequest, params url.Values) (*RespT, error) {
@@ -193,7 +193,7 @@ func doRequest[RespT any](ctx context.Context, c *Client, path string, paginatio
 	return &out, nil
 }
 
-func prepareRequest(req *http.Request, pagination *PageRequest, extra url.Values) {
+func prepareRequest(req *http.Request, pagination *PageRequest, params url.Values) {
 	q := req.URL.Query()
 	if pagination != nil {
 		if pagination.Key != "" {
@@ -203,7 +203,7 @@ func prepareRequest(req *http.Request, pagination *PageRequest, extra url.Values
 			q.Set("pagination.limit", strconv.FormatUint(pagination.Limit, 10))
 		}
 	}
-	for k, vs := range extra {
+	for k, vs := range params {
 		for _, v := range vs {
 			q.Add(k, v)
 		}
