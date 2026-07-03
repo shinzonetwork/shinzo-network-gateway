@@ -6,8 +6,9 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/shinzonetwork/shinzo-network-gateway/host"
 	"go.uber.org/zap"
+
+	"github.com/shinzonetwork/shinzo-network-gateway/host"
 )
 
 type pool struct {
