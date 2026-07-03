@@ -60,7 +60,6 @@ func (f *ShinzohubCollectionsFetcher) FetchCollections(ctx context.Context, h Ho
 func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]string, error) {
 	f.logger.Sugar().Info("refreshing pools from shinzohub")
 
-	// TODO(tzdybal): metadata is not populated yet!
 	views, err := f.client.GetAllViews(ctx, &shinzohub.QueryViewsRequest{IncludeMetadata: true})
 	if err != nil {
 		return nil, err
