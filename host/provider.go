@@ -3,8 +3,12 @@ package host
 import (
 	"bufio"
 	"context"
+	"errors"
 	"os"
+	"slices"
+	"time"
 
+	shinzohub "github.com/shinzonetwork/shinzo-network-gateway/pkg/shinzohub-api"
 	"go.uber.org/zap"
 )
 
@@ -63,4 +67,94 @@ func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host
 // SetLogger sets the logger used by the provider.
 func (p *FileProvider) SetLogger(logger *zap.Logger) {
 	p.logger = logger.Named("file-provider")
+}
+
+// ShinzohubProvider reads host information from shinzohub using REST.
+type ShinzohubProvider struct {
+	client *shinzohub.Client
+
+	hosts []Host
+
+	logger *zap.Logger
+}
+
+var _ Provider = &ShinzohubProvider{}
+
+// TODO(tzdybal): make this configurable.
+const (
+	refreshInterval = 10 * time.Second
+	fetchTimeout    = 5 * time.Second
+)
+
+// NewShinzohubProvider creates a ShinzohubProvider that reads hosts from given shinzohub endpoint.
+func NewShinzohubProvider(baseURL string) *ShinzohubProvider {
+	return &ShinzohubProvider{
+		client: shinzohub.NewClient(baseURL),
+	}
+}
+
+// Run gets all hosts from shinzohub periodically and fires events when host set changes.
+func (p *ShinzohubProvider) Run(ctx context.Context, register func(Host), deregister func(Host)) error {
+	p.logger.Sugar().Info("starting")
+
+	// update hosts immediately
+	p.updateHosts(ctx, register, deregister)
+
+	ticker := time.NewTicker(refreshInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.Canceled) {
+				return nil
+			}
+			return ctx.Err()
+		case <-ticker.C:
+			p.updateHosts(ctx, register, deregister)
+		}
+	}
+}
+
+func (p *ShinzohubProvider) updateHosts(ctx context.Context, register func(Host), deregister func(Host)) {
+	p.logger.Sugar().Debug("fetching hosts")
+	newHosts, err := p.fetchHosts(ctx)
+	if err != nil {
+		p.logger.Sugar().Errorw("failed to fetch hosts from shinzohub", "error", err)
+		return
+	}
+	p.logger.Sugar().Debugf("fetched %d hosts", len(newHosts))
+	added, removed := getSliceDiffs(p.hosts, newHosts)
+	p.logger.Sugar().Debugf("%d hosts to add, %d hosts to remove", len(added), len(removed))
+	for _, a := range added {
+		register(a)
+	}
+	for _, r := range removed {
+		deregister(r)
+	}
+	p.hosts = newHosts
+}
+
+func (p *ShinzohubProvider) fetchHosts(ctx context.Context) ([]Host, error) {
+	callCtx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+
+	resp, err := p.client.GetAllHosts(callCtx)
+	if err != nil {
+		return nil, err
+	}
+
+	hosts := make([]Host, 0, len(resp))
+
+	for _, h := range resp {
+		hosts = append(hosts, Host(h.ConnectionString))
+	}
+
+	slices.Sort(hosts)
+	return hosts, nil
+}
+
+// SetLogger sets the logger used by the provider.
+func (p *ShinzohubProvider) SetLogger(logger *zap.Logger) {
+	p.logger = logger.Named("shinzohub-provider")
 }

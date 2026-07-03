@@ -1,6 +1,7 @@
 package host
 
 import (
+	"cmp"
 	"context"
 	"slices"
 	"time"
@@ -111,7 +112,7 @@ func (m *monitor) notifyCollsUpdate(oldColls, newColls []string) {
 	}
 }
 
-func getSliceDiffs(prev, next []string) (added []string, removed []string) {
+func getSliceDiffs[T cmp.Ordered](prev, next []T) (added []T, removed []T) {
 	i, j := 0, 0
 	for i < len(prev) && j < len(next) {
 		switch {
