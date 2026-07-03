@@ -112,7 +112,7 @@ func (c *Client) GetHost(ctx context.Context, address string) (*QueryHostRespons
 }
 
 // GetViews returns the paginated list of registered views.
-// TODO(tzdybal): impelmeent full filtering from QueryViewsRequest.
+// TODO(tzdybal): implement full filtering from QueryViewsRequest.
 func (c *Client) GetViews(ctx context.Context, pagination *PageRequest, params *QueryViewsRequest) (*QueryViewsResponse, error) {
 	var values url.Values
 	if params != nil {
@@ -139,15 +139,13 @@ func (c *Client) GetAllViews(ctx context.Context, filters *QueryViewsRequest) ([
 }
 
 // GetView returns a single view identified by its contract address.
+// TODO(tzdybal): implement full filtering from QueryViewRequest.
 func (c *Client) GetView(ctx context.Context, contractAddress string, params *QueryViewRequest) (*QueryViewResponse, error) {
 	var values url.Values
 	if params != nil {
 		values = make(url.Values)
 		if params.IncludeData {
 			values.Set("include_data", "true")
-		}
-		if params.IncludeMetadata {
-			values.Set("include_metadata", "true")
 		}
 		if params.IncludeMetadata {
 			values.Set("include_metadata", "true")
