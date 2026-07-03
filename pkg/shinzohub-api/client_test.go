@@ -52,6 +52,36 @@ func TestGetHosts(t *testing.T) {
 	require.Equal(t, "0", resp.Pagination.Total)
 }
 
+func TestGetHost(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/host.json")
+	require.NoError(t, err)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.GetHost(ctx, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// the request is built correctly
+	require.Equal(t, "/shinzonetwork/host/v1/host/shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", gotPath)
+
+	// the response is decoded correctly
+	require.Equal(t, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", resp.Host.Address)
+	require.Equal(t, "did:key:z7r8otXUgTfe4Z7QwqKreVS4D3vh7AiuWKuFWSctr596B16NBTByoVoScoQN4GgwfjDicLqTpwTkEJjJbvEEWf8dPDCrU", resp.Host.DID)
+	require.Equal(t, "192.168.1.1:8080", resp.Host.ConnectionString)
+	require.Equal(t, "https://192.168.1.1/api/v0/graphql", resp.Host.EndpointAddress)
+}
+
 func TestGetAllHosts(t *testing.T) {
 	// cursor chain extracted from the page fixtures: "" -> keyA -> keyB -> done.
 	const (
