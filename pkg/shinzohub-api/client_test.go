@@ -186,6 +186,82 @@ func TestGetPoolDetail(t *testing.T) {
 	require.EqualValues(t, 412, detail.Stats.LastUpdatedEpoch)
 }
 
+func TestGetPoolDetails(t *testing.T) {
+	t.Parallel()
+	fixture, err := os.ReadFile("testdata/pool_details.json")
+	require.NoError(t, err)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.GetPoolDetails(ctx, nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// the request is built correctly
+	require.Equal(t, "/shinzonetwork/host/v1/details", gotPath)
+
+	// the response is decoded correctly
+	require.Len(t, resp.Details, 1)
+	detail := resp.Details[0]
+	require.True(t, detail.IsActive)
+	require.Equal(t, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", detail.Pool.PoolAddress)
+	require.Len(t, detail.Hosts, 1)
+	require.Equal(t, "shinzo1nk9z4r3vq8x5acjs0w8tg3hp9lqz1bd2mn7k9", detail.Hosts[0].HostAddress)
+	require.Len(t, detail.Demands, 1)
+	require.Equal(t, "shinzo1dev3k9c2x7r0qy4m8v5zn6jp1ts2gh8dlqmnp", detail.Demands[0].RegistrantAddress)
+	require.EqualValues(t, 73, detail.Stats.Utilization)
+
+	require.NotNil(t, resp.Pagination)
+	require.Empty(t, resp.Pagination.NextKey)
+	require.Equal(t, "1", resp.Pagination.Total)
+}
+
+func TestGetPoolHosts(t *testing.T) {
+	t.Parallel()
+	fixture, err := os.ReadFile("testdata/pool_hosts.json")
+	require.NoError(t, err)
+
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(fixture)
+	}))
+	defer srv.Close()
+
+	client := NewClient(srv.URL)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	resp, err := client.GetPoolHosts(ctx, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// the request is built correctly
+	require.Equal(t, "/shinzonetwork/host/v1/pools/0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92/hosts", gotPath)
+
+	// the response is decoded correctly
+	require.Len(t, resp.Hosts, 1)
+	host := resp.Hosts[0]
+	require.Equal(t, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", host.PoolAddress)
+	require.Equal(t, "shinzo1nk9z4r3vq8x5acjs0w8tg3hp9lqz1bd2mn7k9", host.HostAddress)
+	require.EqualValues(t, 1090, host.Host.JoinedAt)
+
+	require.NotNil(t, resp.Pagination)
+	require.Empty(t, resp.Pagination.NextKey)
+	require.Equal(t, "1", resp.Pagination.Total)
+}
+
 func TestGetPools(t *testing.T) {
 	t.Parallel()
 	fixture, err := os.ReadFile("testdata/pools.json")

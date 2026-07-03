@@ -1,0 +1,15 @@
+{
+  "hosts": [
+    {
+      "pool_address": "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92",
+      "host_address": "shinzo1nk9z4r3vq8x5acjs0w8tg3hp9lqz1bd2mn7k9",
+      "host": {
+        "joined_at": "1090"
+      }
+    }
+  ],
+  "pagination": {
+    "next_key": null,
+    "total": "1"
+  }
+}
