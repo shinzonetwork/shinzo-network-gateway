@@ -51,6 +51,7 @@ func (f *HTTPCollectionsFetcher) FetchCollections(ctx context.Context, h Host) (
 	}
 	req.Header.Set("Accept", "application/json")
 
+	f.logger.Sugar().Debugw("fetching collections", "url", endpoint)
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch %s: %w", endpoint, err)
