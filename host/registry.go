@@ -61,19 +61,21 @@ func NewRegistry(
 		providers:   providers,
 		observers:   observers,
 		monitors:    make(map[Host]context.CancelFunc),
-		logger:      logger.Named("Registry"),
+		logger:      logger.Named("registry"),
 	}
 }
 
 // Run launches all providers and begins processing host events.
 func (r *Registry) Run(ctx context.Context) error {
+	r.logger.Info("starting registry", zap.Int("providers", len(r.providers)))
+
 	register := func(h Host) { r.register(ctx, h) }
 	deregister := func(h Host) { r.deregister(ctx, h) }
 
 	for _, provider := range r.providers {
 		r.providersWG.Go(func() {
 			if err := provider.Run(ctx, register, deregister); err != nil && !errors.Is(err, context.Canceled) {
-				r.logger.Sugar().Errorw("provider exited", "error", err)
+				r.logger.Error("provider exited", zap.Error(err))
 			}
 		})
 	}
@@ -95,6 +97,8 @@ func (r *Registry) register(ctx context.Context, h Host) {
 	r.monitors[h] = cancel
 	r.mtx.Unlock()
 
+	r.logger.Info("host registered", zap.String("host", string(h)))
+
 	r.monitorsWG.Go(func() {
 		m := newMonitor(h, r.connChecker, r.collFetcher, r.observers, r.logger)
 
@@ -108,5 +112,6 @@ func (r *Registry) deregister(_ context.Context, h Host) {
 	if cancel, ok := r.monitors[h]; ok {
 		delete(r.monitors, h)
 		cancel()
+		r.logger.Info("host deregistered", zap.String("host", string(h)))
 	}
 }

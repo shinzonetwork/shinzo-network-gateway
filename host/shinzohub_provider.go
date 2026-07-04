@@ -44,7 +44,7 @@ func NewShinzohubProvider(baseURL string, logger *zap.Logger) (*ShinzohubProvide
 
 // Run gets all hosts from shinzohub periodically and fires events when host set changes.
 func (p *ShinzohubProvider) Run(ctx context.Context, register func(Host), deregister func(Host)) error {
-	p.logger.Sugar().Infow("starting", "baseURL", p.baseURL)
+	p.logger.Info("starting shinzohub provider", zap.String("url", p.baseURL))
 
 	p.hosts = nil
 
@@ -68,19 +68,19 @@ func (p *ShinzohubProvider) Run(ctx context.Context, register func(Host), deregi
 }
 
 func (p *ShinzohubProvider) updateHosts(ctx context.Context, register func(Host), deregister func(Host)) {
-	p.logger.Sugar().Debug("fetching hosts")
+	p.logger.Debug("fetching hosts from shinzohub")
 	newHosts, err := p.fetchHosts(ctx)
 	if err != nil {
-		p.logger.Sugar().Errorw("failed to fetch hosts from shinzohub", "error", err)
+		p.logger.Warn("failed to fetch hosts from shinzohub", zap.Error(err))
 		return
 	}
 	if len(newHosts) == 0 && len(p.hosts) > 0 {
-		p.logger.Sugar().Warn("shinzohub returned empty host list, skipping update to avoid mass-deregistration")
+		p.logger.Warn("shinzohub returned empty host list, skipping update to avoid mass-deregistration")
 		return
 	}
-	p.logger.Sugar().Debugf("fetched %d hosts", len(newHosts))
 	added, removed := getSliceDiffs(p.hosts, newHosts)
-	p.logger.Sugar().Debugf("%d hosts to add, %d hosts to remove", len(added), len(removed))
+	p.logger.Debug("fetched hosts from shinzohub",
+		zap.Int("hosts", len(newHosts)), zap.Int("added", len(added)), zap.Int("removed", len(removed)))
 	for _, a := range added {
 		register(a)
 	}

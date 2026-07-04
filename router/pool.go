@@ -24,7 +24,7 @@ func newPool(collection string, hosts []host.Host, logger *zap.Logger) *pool {
 	return &pool{
 		collection: collection,
 		hosts:      newDeckSampler(hosts, mustGetSeed()),
-		logger:     logger.Named("pool:" + collection),
+		logger:     logger.Named("pool").With(zap.String("collection", collection)),
 	}
 }
 
@@ -46,6 +46,7 @@ func (p *pool) add(h host.Host) {
 		hosts = slices.Compact(hosts)
 
 		p.hosts.Reset(hosts)
+		p.logger.Debug("host added to pool", zap.String("host", string(h)), zap.Int("poolSize", len(hosts)))
 	}
 }
 
@@ -61,6 +62,7 @@ func (p *pool) remove(h host.Host) {
 
 	if len(hosts) != n {
 		p.hosts.Reset(hosts)
+		p.logger.Debug("host removed from pool", zap.String("host", string(h)), zap.Int("poolSize", len(hosts)))
 	}
 }
 

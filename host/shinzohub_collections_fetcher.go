@@ -53,7 +53,7 @@ func (f *ShinzohubCollectionsFetcher) FetchCollections(ctx context.Context, h Ho
 	if stale {
 		colls, err := f.refresh(ctx)
 		if err != nil {
-			f.logger.Sugar().Errorw("failed to refresh pools", "error", err)
+			f.logger.Warn("failed to refresh collections from shinzohub, serving stale data", zap.Error(err))
 		} else {
 			f.collections = colls
 		}
@@ -63,7 +63,7 @@ func (f *ShinzohubCollectionsFetcher) FetchCollections(ctx context.Context, h Ho
 }
 
 func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]string, error) {
-	f.logger.Sugar().Info("refreshing pools from shinzohub")
+	f.logger.Debug("refreshing collections from shinzohub")
 	f.lastRefresh = time.Now()
 
 	var views []shinzohub.View
@@ -98,15 +98,15 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 	for _, p := range pools {
 		coll, ok := collsByView[p.Pool.ViewAddress]
 		if !ok {
-			f.logger.Sugar().Warnw("pool references unresolved view, skipping",
-				"pool", p.Pool.PoolAddress, "view", p.Pool.ViewAddress)
+			f.logger.Warn("pool references unresolved view, skipping",
+				zap.String("pool", p.Pool.PoolAddress), zap.String("view", p.Pool.ViewAddress))
 			continue
 		}
 		for _, h := range p.Hosts {
 			endpoint, ok := endpointByAddress[h.HostAddress]
 			if !ok {
-				f.logger.Sugar().Warnw("pool host has no known endpoint, skipping",
-					"pool", p.Pool.PoolAddress, "host", h.HostAddress)
+				f.logger.Warn("pool host has no known endpoint, skipping",
+					zap.String("pool", p.Pool.PoolAddress), zap.String("host", h.HostAddress))
 				continue
 			}
 			collsByHost[endpoint] = append(collsByHost[endpoint], coll)
@@ -119,7 +119,8 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 		collsByHost[h] = slices.Compact(colls)
 	}
 
-	f.logger.Sugar().Infow("refreshed pools from shinzohub",
-		"views", len(views), "hosts", len(hosts), "pools", len(pools), "hostsWithCollections", len(collsByHost))
+	f.logger.Debug("refreshed collections from shinzohub",
+		zap.Int("views", len(views)), zap.Int("hosts", len(hosts)), zap.Int("pools", len(pools)),
+		zap.Int("hostsWithCollections", len(collsByHost)))
 	return collsByHost, nil
 }

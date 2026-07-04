@@ -15,11 +15,13 @@ const (
 	defaultCollectionsInterval = 1 * time.Minute
 	defaultListenAddr          = ":8080"
 	defaultSampleSize          = 3
+	defaultLogLevel            = "info"
 
 	flagListen       = "listen"
 	flagSample       = "sample-size"
 	flagTimeout      = "timeout"
 	flagShinzohubURL = "shinzohub-url"
+	flagLogLevel     = "log-level"
 )
 
 // App is the main application struct holding configuration state.
