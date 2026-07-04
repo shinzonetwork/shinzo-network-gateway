@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	shinzohub "github.com/shinzonetwork/shinzo-network-gateway/pkg/shinzohub-api"
 )
@@ -65,10 +66,22 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 	f.logger.Sugar().Info("refreshing pools from shinzohub")
 	f.lastRefresh = time.Now()
 
-	views, err := f.client.GetAllViews(ctx, &shinzohub.QueryViewsRequest{IncludeMetadata: true})
-	if err != nil {
+	var views []shinzohub.View
+	var hosts []shinzohub.Host
+	var pools []shinzohub.PoolDetail
+
+	// fetch
+	grp, ctx := errgroup.WithContext(ctx)
+	grp.Go(func() (err error) {
+		views, err = f.client.GetAllViews(ctx, &shinzohub.QueryViewsRequest{IncludeMetadata: true})
+		return
+	})
+	grp.Go(func() (err error) { hosts, err = f.client.GetAllHosts(ctx); return })
+	grp.Go(func() (err error) { pools, err = f.client.GetAllPoolDetails(ctx); return })
+	if err := grp.Wait(); err != nil {
 		return nil, err
 	}
+
 	collsByView := make(map[string]string, len(views))
 	for _, v := range views {
 		if v.Metadata != nil && v.Metadata.RootType != "" {
@@ -76,19 +89,11 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 		}
 	}
 
-	hosts, err := f.client.GetAllHosts(ctx)
-	if err != nil {
-		return nil, err
-	}
 	endpointByAddress := make(map[string]Host, len(hosts))
 	for _, h := range hosts {
 		endpointByAddress[h.Address] = Host(h.EndpointAddress)
 	}
 
-	pools, err := f.client.GetAllPoolDetails(ctx)
-	if err != nil {
-		return nil, err
-	}
 	collsByHost := make(map[Host][]string)
 	for _, p := range pools {
 		coll, ok := collsByView[p.Pool.ViewAddress]
