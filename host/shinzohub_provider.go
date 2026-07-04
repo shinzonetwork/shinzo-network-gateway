@@ -73,6 +73,10 @@ func (p *ShinzohubProvider) updateHosts(ctx context.Context, register func(Host)
 		p.logger.Sugar().Errorw("failed to fetch hosts from shinzohub", "error", err)
 		return
 	}
+	if len(newHosts) == 0 && len(p.hosts) > 0 {
+		p.logger.Sugar().Warn("shinzohub returned empty host list, skipping update to avoid mass-deregistration")
+		return
+	}
 	p.logger.Sugar().Debugf("fetched %d hosts", len(newHosts))
 	added, removed := getSliceDiffs(p.hosts, newHosts)
 	p.logger.Sugar().Debugf("%d hosts to add, %d hosts to remove", len(added), len(removed))
