@@ -47,6 +47,8 @@ func NewShinzohubProvider(baseURL string, logger *zap.Logger) (*ShinzohubProvide
 func (p *ShinzohubProvider) Run(ctx context.Context, register func(Host), deregister func(Host)) error {
 	p.logger.Sugar().Infow("starting", "baseURL", p.baseURL)
 
+	p.hosts = nil
+
 	// update hosts immediately
 	p.updateHosts(ctx, register, deregister)
 
