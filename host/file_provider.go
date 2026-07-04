@@ -50,7 +50,7 @@ func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host
 		}
 	}
 
-	return nil
+	return sc.Err()
 }
 
 // SetLogger sets the logger used by the provider.
