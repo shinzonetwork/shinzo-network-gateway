@@ -80,7 +80,7 @@ func (a *App) initConfig() error {
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("error finding home directory: %w", err)
+			return fmt.Errorf("finding home directory: %w", err)
 		}
 		a.v.AddConfigPath(home)
 		a.v.SetConfigType("yaml")

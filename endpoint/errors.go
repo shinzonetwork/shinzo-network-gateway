@@ -56,8 +56,8 @@ var ErrInvalidOrder = errors.New("invalid order")
 // (a fragment spread or inline fragment).
 var ErrUnsupportedSelection = errors.New("unsupported root selection")
 
-// ErrHostHTTP is returned when an upstream host responds with a non-2xx status.
-var ErrHostHTTP = errors.New("host HTTP error")
+// ErrUnexpectedStatus is returned when an upstream host responds with a non-2xx status.
+var ErrUnexpectedStatus = errors.New("unexpected HTTP status")
 
 // ErrResponseTooLarge is returned when an upstream host response exceeds the size limit.
 var ErrResponseTooLarge = errors.New("response too large")

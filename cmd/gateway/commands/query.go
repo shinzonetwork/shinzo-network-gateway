@@ -40,14 +40,14 @@ func (a *App) query(cmd *cobra.Command, args []string) error {
 
 	body, err := json.Marshal(query{Query: args[0]})
 	if err != nil {
-		return fmt.Errorf("error marshaling request: %w", err)
+		return fmt.Errorf("marshaling request: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("error creating request: %w", err)
+		return fmt.Errorf("creating request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -55,14 +55,14 @@ func (a *App) query(cmd *cobra.Command, args []string) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("error sending request: %w", err)
+		return fmt.Errorf("sending request: %w", err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
 	}()
 
 	if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
-		return fmt.Errorf("error reading response: %w", err)
+		return fmt.Errorf("reading response: %w", err)
 	}
 
 	return nil

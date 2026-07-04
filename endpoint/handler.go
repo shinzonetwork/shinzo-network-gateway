@@ -243,12 +243,12 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte, ho
 
 	if len(respBody) > maxResponseBodySize {
 		logger.Warn("host response too large", zap.Int("maxSize", maxResponseBodySize))
-		return hostResponse{err: fmt.Errorf("host %s response too large: %w", host, ErrResponseTooLarge)}
+		return hostResponse{err: fmt.Errorf("%w: host %s", ErrResponseTooLarge, host)}
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		logger.Warn("host returned error status", zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
-		return hostResponse{err: fmt.Errorf("host %s returned HTTP %d: %w", host, resp.StatusCode, ErrHostHTTP)}
+		return hostResponse{err: fmt.Errorf("%w: %d from host %s", ErrUnexpectedStatus, resp.StatusCode, host)}
 	}
 
 	logger.Debug("host query succeeded",
@@ -278,7 +278,7 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 	groups := groupResponses(responses)
 	if len(groups) == 0 {
 		h.logger.Error("all host queries failed", zap.Int("hosts", len(responses)))
-		h.writeError(w, http.StatusBadGateway, "no successful hosts responses", contentType)
+		h.writeError(w, http.StatusBadGateway, "no successful host responses", contentType)
 		return
 	}
 

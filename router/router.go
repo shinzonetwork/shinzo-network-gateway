@@ -12,9 +12,9 @@ import (
 
 var (
 	// ErrPoolNotSupported is returned if requested type of pool is not supported by Router.
-	ErrPoolNotSupported = errors.New("only single-collection pools are supported")
+	ErrPoolNotSupported = errors.New("queries spanning multiple collections are not supported")
 	// ErrPoolNotFound is returned when pool was not found by the Router.
-	ErrPoolNotFound = errors.New("pool not found")
+	ErrPoolNotFound = errors.New("no hosts serve the requested collection")
 )
 
 // Router selects the hosts for query based on information from Registry.

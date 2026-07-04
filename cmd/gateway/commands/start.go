@@ -49,7 +49,7 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	logger, err := a.newLogger()
 	if err != nil {
-		return fmt.Errorf("error while creating logger: %w", err)
+		return fmt.Errorf("creating logger: %w", err)
 	}
 	defer func() {
 		_ = logger.Sync()
@@ -70,13 +70,13 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	shinzoURL := a.v.GetString(flagShinzohubURL)
 	shinzohubProvider, err := host.NewShinzohubProvider(shinzoURL, logger)
 	if err != nil {
-		return fmt.Errorf("error while creating Shinzohub provider: %w", err)
+		return fmt.Errorf("creating Shinzohub provider: %w", err)
 	}
 
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
 	collFetcher, err := host.NewShinzohubCollectionsFetcher(shinzoURL, defaultRefreshInterval, logger)
 	if err != nil {
-		return fmt.Errorf("error while creating Shinzohub collections fetcher: %w", err)
+		return fmt.Errorf("creating Shinzohub collections fetcher: %w", err)
 	}
 
 	rtr := router.New(logger)
@@ -97,7 +97,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	handler := endpoint.NewHandler(validators, &endpoint.DefaultCollectionExtractor{}, rtr, sampleSize, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {
-		return fmt.Errorf("error while creating endpoint: %w", err)
+		return fmt.Errorf("creating endpoint: %w", err)
 	}
 
 	grp, ctx := errgroup.WithContext(ctx)

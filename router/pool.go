@@ -69,7 +69,7 @@ func (p *pool) remove(h host.Host) {
 func mustGetSeed() [32]byte {
 	var seed [32]byte
 	if _, err := rand.Read(seed[:]); err != nil {
-		panic(fmt.Errorf("failed while generating random seed: %w", err))
+		panic(fmt.Errorf("generating random seed: %w", err))
 	}
 
 	return seed
