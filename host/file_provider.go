@@ -1,0 +1,55 @@
+package host
+
+import (
+	"bufio"
+	"context"
+	"os"
+
+	"go.uber.org/zap"
+)
+
+// FileProvider reads hosts line-by-line from a file and calls register callback.
+type FileProvider struct {
+	filename string
+
+	logger *zap.Logger
+}
+
+var _ Provider = &FileProvider{}
+
+// NewFileProvider creates a FileProvider that reads hosts from the given file.
+func NewFileProvider(filename string, logger *zap.Logger) *FileProvider {
+	return &FileProvider{
+		filename: filename,
+		logger:   logger.Named("file-provider"),
+	}
+}
+
+// Run reads the host file and sends a HostRegistered event for each line.
+func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host)) error {
+	p.logger.Sugar().Debugw("opening host file", "path", p.filename)
+	f, err := os.Open(p.filename)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err := f.Close()
+		if err != nil {
+			p.logger.Sugar().Infow("failed to close file", "path", p.filename, "error", err)
+		}
+	}()
+	sc := bufio.NewScanner(f)
+
+	for sc.Scan() {
+		host := sc.Text()
+		p.logger.Sugar().Debugw("host found", "address", host)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			register(Host(host))
+		}
+	}
+
+	return sc.Err()
+}

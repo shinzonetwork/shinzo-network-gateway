@@ -42,11 +42,14 @@ func (cc *HTTPConnectionChecker) CheckConnection(ctx context.Context, h Host) Co
 	if err != nil {
 		return ConnectionStatus{Online: false}
 	}
+
+	cc.logger.Sugar().Debugw("checking hosts", "url", string(h))
 	start := time.Now()
 	resp, err := cc.client.Do(req)
 	duration := time.Since(start)
 
 	if err != nil {
+		cc.logger.Sugar().Debugw("host check error", "url", string(h), "error", err)
 		return ConnectionStatus{Online: false}
 	}
 	_ = resp.Body.Close()

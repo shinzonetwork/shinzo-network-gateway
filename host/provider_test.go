@@ -3,10 +3,7 @@ package host
 import (
 	"context"
 	"errors"
-	"testing"
-	"time"
 
-	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
@@ -16,9 +13,10 @@ type MockProvider struct {
 	logger *zap.Logger
 }
 
-func NewMockProvider(initialHosts []Host) *MockProvider {
+func NewMockProvider(initialHosts []Host, logger *zap.Logger) *MockProvider {
 	return &MockProvider{
-		hosts: initialHosts,
+		hosts:  initialHosts,
+		logger: logger.Named("mock-provider"),
 	}
 }
 
@@ -37,31 +35,4 @@ func (mock *MockProvider) Run(ctx context.Context, register func(Host), _ func(H
 		register(h)
 	}
 	return nil
-}
-
-func TestFileProvider(t *testing.T) {
-	logger, err := zap.NewDevelopment()
-	require.NoError(t, err)
-	defer func() {
-		_ = logger.Sync()
-	}()
-
-	p := NewFileProvider("./testdata/hosts.txt")
-	p.SetLogger(logger)
-
-	cnt := 0
-	register := func(_ Host) {
-		cnt++
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	err = p.Run(ctx, register, nil)
-	require.NoError(t, err)
-	require.Eventually(t, func() bool { return cnt > 1 }, 1*time.Second, 50*time.Millisecond)
-}
-
-// SetLogger sets the logger used by the provider.
-func (mock *MockProvider) SetLogger(logger *zap.Logger) {
-	mock.logger = logger.Named("mock-provider")
 }

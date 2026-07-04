@@ -31,6 +31,7 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 	}
 	cmd.Flags().String(flagListen, defaultListenAddr, "HTTP listen address for GraphQL endpoint")
 	cmd.Flags().Int(flagSample, defaultSampleSize, "number of hosts for query fan out")
+	cmd.Flags().String(flagShinzohubURL, "", "Base URL of the Shinzohub API to fetch information from")
 
 	err := a.v.BindPFlags(cmd.Flags())
 	if err != nil {
@@ -55,8 +56,13 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	defer stop()
 
 	// TODO(tzdybal): config/env/flag for host file
-	provider := host.NewFileProvider("hosts.txt")
-	provider.SetLogger(logger)
+	fileProvider := host.NewFileProvider("hosts.txt", logger)
+
+	shinzohubProvider, err := host.NewShinzohubProvider(a.v.GetString(flagShinzohubURL), logger)
+	if err != nil {
+		return fmt.Errorf("error while creating Shinzohub provider: %w", err)
+	}
+
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
 	collFetcher := host.NewHTTPCollectionsFetcher(defaultTimeout, logger)
 
@@ -66,7 +72,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 			ConnCheckInterval:          defaultInterval,
 			CollectionsRefreshInterval: defaultCollectionsInterval,
 		},
-		[]host.Provider{provider},
+		[]host.Provider{shinzohubProvider, fileProvider},
 		[]host.Observer{rtr},
 		connChecker,
 		collFetcher,
