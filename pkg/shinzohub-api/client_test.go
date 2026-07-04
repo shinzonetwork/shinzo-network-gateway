@@ -116,7 +116,7 @@ func TestGetHost(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.GetHost(ctx, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2", nil)
+	resp, err := client.GetHost(ctx, "shinzo168x4ff4e05md6c43djcqavtf3kxjgznzgxeyt2")
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -147,7 +147,7 @@ func TestGetPoolDetail(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.GetPoolDetail(ctx, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", nil)
+	resp, err := client.GetPoolDetail(ctx, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92")
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -316,7 +316,7 @@ func TestGetPool(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.GetPool(ctx, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92", nil)
+	resp, err := client.GetPool(ctx, "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92")
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
@@ -385,7 +385,7 @@ func TestGetView(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	resp, err := client.GetView(ctx, "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97", nil)
+	resp, err := client.GetView(ctx, "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97")
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 

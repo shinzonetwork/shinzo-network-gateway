@@ -64,15 +64,15 @@ func (c *Client) GetAllPools(ctx context.Context) ([]Pool, error) {
 }
 
 // GetPool returns a single pool identified by its address.
-func (c *Client) GetPool(ctx context.Context, poolAddress string, pagination *PageRequest) (*QueryPoolResponse, error) {
+func (c *Client) GetPool(ctx context.Context, poolAddress string) (*QueryPoolResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pool/%s", poolAddress)
-	return doRequest[QueryPoolResponse](ctx, c, path, pagination)
+	return doRequest[QueryPoolResponse](ctx, c, path, nil)
 }
 
 // GetPoolDetail returns a pool together with its hosts and demands, identified by the pool address.
-func (c *Client) GetPoolDetail(ctx context.Context, poolAddress string, pagination *PageRequest) (*QueryDetailResponse, error) {
+func (c *Client) GetPoolDetail(ctx context.Context, poolAddress string) (*QueryDetailResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pool/%s/detail", poolAddress)
-	return doRequest[QueryDetailResponse](ctx, c, path, pagination)
+	return doRequest[QueryDetailResponse](ctx, c, path, nil)
 }
 
 // GetPoolDetails returns the paginated list of pools together with their hosts and demands.
@@ -106,9 +106,9 @@ func (c *Client) GetAllPoolHosts(ctx context.Context, poolAddress string) ([]Poo
 }
 
 // GetHost returns a single host identified by its address.
-func (c *Client) GetHost(ctx context.Context, address string, pagination *PageRequest) (*QueryHostResponse, error) {
+func (c *Client) GetHost(ctx context.Context, address string) (*QueryHostResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/host/%s", address)
-	return doRequest[QueryHostResponse](ctx, c, path, pagination)
+	return doRequest[QueryHostResponse](ctx, c, path, nil)
 }
 
 // GetViews returns the paginated list of registered views.
@@ -127,9 +127,9 @@ func (c *Client) GetAllViews(ctx context.Context) ([]View, error) {
 
 // GetView returns a single view identified by its contract address.
 // TODO(tzdybal): impelmeent full filtering from QueryViewRequest.
-func (c *Client) GetView(ctx context.Context, contractAddress string, pagination *PageRequest) (*QueryViewResponse, error) {
+func (c *Client) GetView(ctx context.Context, contractAddress string) (*QueryViewResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/view/v1/views/%s", contractAddress)
-	return doRequest[QueryViewResponse](ctx, c, path, pagination)
+	return doRequest[QueryViewResponse](ctx, c, path, nil)
 }
 
 func doRequest[RespT any](ctx context.Context, c *Client, path string, pagination *PageRequest) (*RespT, error) {
