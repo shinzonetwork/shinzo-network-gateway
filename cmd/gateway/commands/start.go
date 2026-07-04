@@ -37,6 +37,7 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 	cmd.Flags().Int(flagSample, defaultSampleSize, "number of hosts for query fan out")
 	cmd.Flags().String(flagShinzohubURL, "", "Base URL of the Shinzohub API to fetch information from")
 	cmd.Flags().String(flagLogLevel, defaultLogLevel, "log level (debug, info, warn, error)")
+	cmd.Flags().String(flagLogFormat, defaultLogFormat, "log format (console for humans, json for log collectors)")
 
 	err := a.v.BindPFlags(cmd.Flags())
 	if err != nil {
@@ -121,14 +122,46 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-// newLogger builds a console logger with the level taken from the log-level flag.
+// errInvalidLogFormat is returned when the log-format flag value is not recognized.
+var errInvalidLogFormat = errors.New("invalid log format")
+
+// newLogger builds a logger with the level and format taken from the log-level and log-format flags.
 func (a *App) newLogger() (*zap.Logger, error) {
 	level, err := zapcore.ParseLevel(a.v.GetString(flagLogLevel))
 	if err != nil {
 		return nil, fmt.Errorf("invalid log level %q: %w", a.v.GetString(flagLogLevel), err)
 	}
 
-	cfg := zap.NewDevelopmentConfig()
+	var cfg zap.Config
+	switch format := a.v.GetString(flagLogFormat); format {
+	case logFormatConsole:
+		cfg = zap.NewDevelopmentConfig()
+	case logFormatJSON:
+		cfg = zap.NewProductionConfig()
+		// keep every log entry; sampling would silently drop repeated messages
+		cfg.Sampling = nil
+		// use the field names and severity values recognized by Cloud Logging structured logs
+		cfg.EncoderConfig.MessageKey = "message"
+		cfg.EncoderConfig.TimeKey = "timestamp"
+		cfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+		cfg.EncoderConfig.LevelKey = "severity"
+		cfg.EncoderConfig.EncodeLevel = encodeSeverity
+		cfg.EncoderConfig.EncodeDuration = zapcore.StringDurationEncoder
+	default:
+		return nil, fmt.Errorf("%w: %q (expected %s or %s)", errInvalidLogFormat, format, logFormatConsole, logFormatJSON)
+	}
 	cfg.Level = zap.NewAtomicLevelAt(level)
 	return cfg.Build()
+}
+
+// encodeSeverity maps zap levels to Cloud Logging LogSeverity values.
+func encodeSeverity(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+	switch {
+	case l == zapcore.WarnLevel:
+		enc.AppendString("WARNING")
+	case l >= zapcore.DPanicLevel:
+		enc.AppendString("CRITICAL")
+	default:
+		enc.AppendString(l.CapitalString())
+	}
 }
