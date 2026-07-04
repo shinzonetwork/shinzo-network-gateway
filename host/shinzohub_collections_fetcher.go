@@ -63,6 +63,7 @@ func (f *ShinzohubCollectionsFetcher) FetchCollections(ctx context.Context, h Ho
 
 func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]string, error) {
 	f.logger.Sugar().Info("refreshing pools from shinzohub")
+	f.lastRefresh = time.Now()
 
 	views, err := f.client.GetAllViews(ctx, &shinzohub.QueryViewsRequest{IncludeMetadata: true})
 	if err != nil {
@@ -113,7 +114,6 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 		collsByHost[h] = slices.Compact(colls)
 	}
 
-	f.lastRefresh = time.Now()
 	f.logger.Sugar().Infow("refreshed pools from shinzohub",
 		"views", len(views), "hosts", len(hosts), "pools", len(pools), "hostsWithCollections", len(collsByHost))
 	return collsByHost, nil
