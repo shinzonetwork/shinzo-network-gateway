@@ -1,0 +1,9 @@
+
+  {
+    "pool": {
+      "pool_address": "0x7A3b9C2e1F4d8A6b0C5e9F2d3A7b1C8e4F6D0a92",
+      "view_address": "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97",
+      "config": { "window_size": "256" },
+      "created_at": "1024"
+    }
+  }

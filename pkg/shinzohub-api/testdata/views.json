@@ -1,0 +1,13 @@
+{
+    "views": [
+      {
+        "name": "usdc_transfers_0x...",
+        "creator": "0x3a7b1c8e4f6d0a925a3b9c2e1f4d8a6b0c5e9f2d",
+        "address": "0x4F2d9A1c6B8e0F3d7A2c5B9e1D4f8A0c3B6e2D97",
+        "height": "1024",
+        "metadata": null
+      }
+    ],
+    "pagination": { "next_key": null, "total": "1" }
+  }
+
