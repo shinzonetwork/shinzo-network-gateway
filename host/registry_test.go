@@ -89,12 +89,9 @@ func TestRegistryStartStop(t *testing.T) {
 	}()
 
 	providers := []Provider{
-		NewMockProvider([]Host{"a.b.c", "127.0.0.1"}),
-		NewMockProvider([]Host{"x.y.z", "192.168.0.1"}),
-		NewMockProvider([]Host{"shinzo.network", "127.0.0.1"}),
-	}
-	for _, provider := range providers {
-		provider.SetLogger(logger)
+		NewMockProvider([]Host{"a.b.c", "127.0.0.1"}, logger),
+		NewMockProvider([]Host{"x.y.z", "192.168.0.1"}, logger),
+		NewMockProvider([]Host{"shinzo.network", "127.0.0.1"}, logger),
 	}
 
 	observer := newMockObserver()
@@ -134,11 +131,8 @@ func TestDuplicateHostRegistration(t *testing.T) {
 	observer := newMockObserver()
 	// both providers advertise the same host
 	providers := []Provider{
-		NewMockProvider([]Host{"duplicate.host"}),
-		NewMockProvider([]Host{"duplicate.host"}),
-	}
-	for _, p := range providers {
-		p.SetLogger(logger)
+		NewMockProvider([]Host{"duplicate.host"}, logger),
+		NewMockProvider([]Host{"duplicate.host"}, logger),
 	}
 
 	reg := NewRegistry(defaultConfig, providers, []Observer{observer}, &mockConnChecker{}, &mockCollFetcher{}, logger)

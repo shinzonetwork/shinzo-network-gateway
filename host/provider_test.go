@@ -13,9 +13,10 @@ type MockProvider struct {
 	logger *zap.Logger
 }
 
-func NewMockProvider(initialHosts []Host) *MockProvider {
+func NewMockProvider(initialHosts []Host, logger *zap.Logger) *MockProvider {
 	return &MockProvider{
-		hosts: initialHosts,
+		hosts:  initialHosts,
+		logger: logger.Named("mock-provider"),
 	}
 }
 
@@ -34,9 +35,4 @@ func (mock *MockProvider) Run(ctx context.Context, register func(Host), _ func(H
 		register(h)
 	}
 	return nil
-}
-
-// SetLogger sets the logger used by the provider.
-func (mock *MockProvider) SetLogger(logger *zap.Logger) {
-	mock.logger = logger.Named("mock-provider")
 }

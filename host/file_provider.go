@@ -18,9 +18,10 @@ type FileProvider struct {
 var _ Provider = &FileProvider{}
 
 // NewFileProvider creates a FileProvider that reads hosts from the given file.
-func NewFileProvider(filename string) *FileProvider {
+func NewFileProvider(filename string, logger *zap.Logger) *FileProvider {
 	return &FileProvider{
 		filename: filename,
+		logger:   logger.Named("file-provider"),
 	}
 }
 
@@ -51,9 +52,4 @@ func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host
 	}
 
 	return sc.Err()
-}
-
-// SetLogger sets the logger used by the provider.
-func (p *FileProvider) SetLogger(logger *zap.Logger) {
-	p.logger = logger.Named("file-provider")
 }

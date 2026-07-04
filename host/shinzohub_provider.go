@@ -31,7 +31,7 @@ const (
 )
 
 // NewShinzohubProvider creates a ShinzohubProvider that reads hosts from given shinzohub endpoint.
-func NewShinzohubProvider(baseURL string) (*ShinzohubProvider, error) {
+func NewShinzohubProvider(baseURL string, logger *zap.Logger) (*ShinzohubProvider, error) {
 	// ParseRequestURI is more strict and rejects "", relative paths, etc
 	if _, err := url.ParseRequestURI(baseURL); err != nil {
 		return nil, err
@@ -39,6 +39,7 @@ func NewShinzohubProvider(baseURL string) (*ShinzohubProvider, error) {
 	return &ShinzohubProvider{
 		baseURL: baseURL,
 		client:  shinzohub.NewClient(baseURL),
+		logger:  logger.Named("shinzohub-provider"),
 	}, nil
 }
 
@@ -101,9 +102,4 @@ func (p *ShinzohubProvider) fetchHosts(ctx context.Context) ([]Host, error) {
 
 	slices.Sort(hosts)
 	return hosts, nil
-}
-
-// SetLogger sets the logger used by the provider.
-func (p *ShinzohubProvider) SetLogger(logger *zap.Logger) {
-	p.logger = logger.Named("shinzohub-provider")
 }

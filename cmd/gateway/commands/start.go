@@ -56,14 +56,12 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	defer stop()
 
 	// TODO(tzdybal): config/env/flag for host file
-	fileProvider := host.NewFileProvider("hosts.txt")
-	fileProvider.SetLogger(logger)
+	fileProvider := host.NewFileProvider("hosts.txt", logger)
 
-	shinzohubProvider, err := host.NewShinzohubProvider(a.v.GetString(flagShinzohubURL))
+	shinzohubProvider, err := host.NewShinzohubProvider(a.v.GetString(flagShinzohubURL), logger)
 	if err != nil {
 		return fmt.Errorf("error while creating Shinzohub provider: %w", err)
 	}
-	shinzohubProvider.SetLogger(logger)
 
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
 	collFetcher := host.NewHTTPCollectionsFetcher(defaultTimeout, logger)

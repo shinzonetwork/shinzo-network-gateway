@@ -17,8 +17,7 @@ func TestFileProvider(t *testing.T) {
 		_ = logger.Sync()
 	}()
 
-	p := NewFileProvider("./testdata/hosts.txt")
-	p.SetLogger(logger)
+	p := NewFileProvider("./testdata/hosts.txt", logger)
 
 	cnt := 0
 	register := func(_ Host) {
