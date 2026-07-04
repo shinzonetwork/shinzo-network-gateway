@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -14,7 +15,10 @@ import (
 // DefaultTimeout is the HTTP client timeout used when none is configured.
 const DefaultTimeout = 10 * time.Second
 
-const defaultPageSize = 100
+const (
+	defaultPageSize = 100
+	maxDrainSize    = 1024 * 1024 // 1MiB
+)
 
 // ErrRequestError is returned when the upstream responds with a non-success HTTP status code.
 var ErrRequestError = errors.New("HTTP status code")
@@ -146,6 +150,8 @@ func doRequest[RespT any](ctx context.Context, c *Client, path string, paginatio
 		return nil, err
 	}
 	defer func() {
+		// always to drain the Body, but with reasonable limit
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainSize))
 		_ = resp.Body.Close()
 	}()
 
