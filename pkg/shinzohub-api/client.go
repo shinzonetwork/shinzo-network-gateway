@@ -157,12 +157,12 @@ func doRequest[RespT any](ctx context.Context, c *Client, path string, paginatio
 
 	// everything >= HTTP 300 is an error
 	if resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("%w: %d", ErrRequestError, resp.StatusCode)
+		return nil, fmt.Errorf("fetch %s: %w: %d", fullPath, ErrRequestError, resp.StatusCode)
 	}
 
 	var out RespT
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch %s: decode response: %w", fullPath, err)
 	}
 
 	return &out, nil
