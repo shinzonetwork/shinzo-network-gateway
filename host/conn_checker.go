@@ -31,7 +31,7 @@ var _ ConnectionChecker = &HTTPConnectionChecker{}
 func NewHTTPConnectionChecker(timeout time.Duration, logger *zap.Logger) *HTTPConnectionChecker {
 	return &HTTPConnectionChecker{
 		client: &http.Client{Timeout: timeout},
-		logger: logger.Named("connection-checker"),
+		logger: logger.Named("conn-checker"),
 	}
 }
 
@@ -40,21 +40,22 @@ func NewHTTPConnectionChecker(timeout time.Duration, logger *zap.Logger) *HTTPCo
 func (cc *HTTPConnectionChecker) CheckConnection(ctx context.Context, h Host) ConnectionStatus {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, string(h), nil)
 	if err != nil {
+		cc.logger.Debug("failed to build connection check request", zap.String("host", string(h)), zap.Error(err))
 		return ConnectionStatus{Online: false}
 	}
 
-	cc.logger.Sugar().Debugw("checking hosts", "url", string(h))
+	cc.logger.Debug("checking host connection", zap.String("host", string(h)))
 	start := time.Now()
 	resp, err := cc.client.Do(req)
 	duration := time.Since(start)
 
 	if err != nil {
-		cc.logger.Sugar().Debugw("host check error", "url", string(h), "error", err)
+		cc.logger.Debug("host connection check failed", zap.String("host", string(h)), zap.Duration("duration", duration), zap.Error(err))
 		return ConnectionStatus{Online: false}
 	}
 	_ = resp.Body.Close()
 
-	cc.logger.Sugar().Debugw("host check result", "url", string(h), "status", resp.StatusCode, "rtt", duration)
+	cc.logger.Debug("host connection check result", zap.String("host", string(h)), zap.Int("status", resp.StatusCode), zap.Duration("rtt", duration))
 	return ConnectionStatus{
 		Online: resp.StatusCode < http.StatusBadRequest,
 		RTT:    duration,

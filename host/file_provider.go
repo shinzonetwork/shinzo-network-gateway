@@ -27,7 +27,7 @@ func NewFileProvider(filename string, logger *zap.Logger) *FileProvider {
 
 // Run reads the host file and sends a HostRegistered event for each line.
 func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host)) error {
-	p.logger.Sugar().Debugw("opening host file", "path", p.filename)
+	p.logger.Info("loading hosts from file", zap.String("path", p.filename))
 	f, err := os.Open(p.filename)
 	if err != nil {
 		return err
@@ -35,14 +35,14 @@ func (p *FileProvider) Run(ctx context.Context, register func(Host), _ func(Host
 	defer func() {
 		err := f.Close()
 		if err != nil {
-			p.logger.Sugar().Infow("failed to close file", "path", p.filename, "error", err)
+			p.logger.Warn("failed to close host file", zap.String("path", p.filename), zap.Error(err))
 		}
 	}()
 	sc := bufio.NewScanner(f)
 
 	for sc.Scan() {
 		host := sc.Text()
-		p.logger.Sugar().Debugw("host found", "address", host)
+		p.logger.Debug("host found in file", zap.String("host", host))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

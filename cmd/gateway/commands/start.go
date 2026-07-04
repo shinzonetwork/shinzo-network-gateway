@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/endpoint"
@@ -35,6 +36,7 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 	cmd.Flags().String(flagListen, defaultListenAddr, "HTTP listen address for GraphQL endpoint")
 	cmd.Flags().Int(flagSample, defaultSampleSize, "number of hosts for query fan out")
 	cmd.Flags().String(flagShinzohubURL, "", "Base URL of the Shinzohub API to fetch information from")
+	cmd.Flags().String(flagLogLevel, defaultLogLevel, "log level (debug, info, warn, error)")
 
 	err := a.v.BindPFlags(cmd.Flags())
 	if err != nil {
@@ -45,15 +47,19 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 }
 
 func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
-	logger, err := zap.NewDevelopment()
-	defer func() {
-		_ = logger.Sync()
-	}()
+	logger, err := a.newLogger()
 	if err != nil {
 		return fmt.Errorf("error while creating logger: %w", err)
 	}
+	defer func() {
+		_ = logger.Sync()
+	}()
 
-	logger.Sugar().Info("Starting Shinzo Network Gateway")
+	logger.Info("starting Shinzo Network Gateway",
+		zap.String("listen", a.v.GetString(flagListen)),
+		zap.Int("sampleSize", a.v.GetInt(flagSample)),
+		zap.String("shinzohubURL", a.v.GetString(flagShinzohubURL)),
+	)
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -113,4 +119,16 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	return nil
+}
+
+// newLogger builds a console logger with the level taken from the log-level flag.
+func (a *App) newLogger() (*zap.Logger, error) {
+	level, err := zapcore.ParseLevel(a.v.GetString(flagLogLevel))
+	if err != nil {
+		return nil, fmt.Errorf("invalid log level %q: %w", a.v.GetString(flagLogLevel), err)
+	}
+
+	cfg := zap.NewDevelopmentConfig()
+	cfg.Level = zap.NewAtomicLevelAt(level)
+	return cfg.Build()
 }

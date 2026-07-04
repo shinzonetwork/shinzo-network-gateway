@@ -31,14 +31,14 @@ func New(addr string, handler *Handler, logger *zap.Logger) (*Endpoint, error) {
 			Handler:           mux,
 			ReadHeaderTimeout: readHeaderTimeout,
 		},
-		logger: logger.Named("Endpoint"),
+		logger: logger.Named("endpoint"),
 	}, nil
 }
 
 // ListenAndServe starts serving HTTP requests and blocks untile the server is shut down.
 // TODO(tzdybal): add TLS support.
 func (e *Endpoint) ListenAndServe() error {
-	e.logger.Sugar().Infow("Starting endpoint", "listen address", e.server.Addr)
+	e.logger.Info("starting HTTP server", zap.String("addr", e.server.Addr))
 	err := e.server.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -48,6 +48,7 @@ func (e *Endpoint) ListenAndServe() error {
 
 // Close gracefully stops the HTTP server.
 func (e *Endpoint) Close(ctx context.Context) error {
+	e.logger.Info("shutting down HTTP server")
 	return e.server.Shutdown(ctx)
 }
 

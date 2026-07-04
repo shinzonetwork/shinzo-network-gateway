@@ -89,7 +89,7 @@ func NewHandler(validators []Validator, extractor CollectionsExtractor, selector
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.logger.Sugar().Debugw("serving HTTP request", "from", r.RemoteAddr)
+	h.logger.Debug("handling GraphQL request", zap.String("remote", r.RemoteAddr))
 
 	contentType := getContentType(r)
 	if contentType == "" {
@@ -145,8 +145,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "invalid extensions", contentType)
 		return
 	}
+	h.logger.Debug("selecting hosts", zap.Strings("collections", collections), zap.Int("fanout", n))
 	hosts, err := h.selector.SelectHosts(r.Context(), n, collections)
 	if err != nil {
+		h.logger.Warn("failed to select hosts", zap.Strings("collections", collections), zap.Error(err))
 		h.writeError(w, http.StatusServiceUnavailable, err.Error(), contentType)
 		return
 	}
@@ -198,12 +200,15 @@ const (
 )
 
 func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte, hostHeader, authHeader string) hostResponse {
-	h.logger.Sugar().Debugw("sending query to host", "host", host, "body", body)
+	logger := h.logger.With(zap.String("host", string(host)))
+	logger.Debug("querying host", zap.Int("bodySize", len(body)))
+
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	url := string(host) + "/api/v0/graphql"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
+		logger.Warn("failed to build host request", zap.Error(err))
 		return hostResponse{err: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -217,32 +222,37 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte, ho
 		req.Header.Set("Authorization", authHeader)
 	}
 
+	start := time.Now()
 	resp, err := h.client.Do(req)
-	h.logger.Sugar().Debugw("HTTP", "resp", resp, "error", err)
 	if err != nil {
+		logger.Warn("host query failed", zap.Duration("duration", time.Since(start)), zap.Error(err))
 		return hostResponse{err: err}
 	}
 	defer func() {
-		err := resp.Body.Close()
-		if err != nil {
-			h.logger.Sugar().Errorw("failed to close response body", "error", err)
+		if err := resp.Body.Close(); err != nil {
+			logger.Warn("failed to close host response body", zap.Error(err))
 		}
 	}()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	duration := time.Since(start)
 	if err != nil {
+		logger.Warn("failed to read host response", zap.Duration("duration", duration), zap.Error(err))
 		return hostResponse{err: err}
 	}
-	h.logger.Sugar().Debugw("response", "resp", respBody, "host", host)
 
 	if len(respBody) > maxResponseBodySize {
+		logger.Warn("host response too large", zap.Int("maxSize", maxResponseBodySize))
 		return hostResponse{err: fmt.Errorf("host %s response too large: %w", host, ErrResponseTooLarge)}
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		logger.Warn("host returned error status", zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
 		return hostResponse{err: fmt.Errorf("host %s returned HTTP %d: %w", host, resp.StatusCode, ErrHostHTTP)}
 	}
 
+	logger.Debug("host query succeeded",
+		zap.Int("status", resp.StatusCode), zap.Int("responseSize", len(respBody)), zap.Duration("duration", duration))
 	return hostResponse{response: respBody}
 }
 
@@ -267,6 +277,7 @@ type consensusExtension struct {
 func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostResponse, contentType string) {
 	groups := groupResponses(responses)
 	if len(groups) == 0 {
+		h.logger.Error("all host queries failed", zap.Int("hosts", len(responses)))
 		h.writeError(w, http.StatusBadGateway, "no successful hosts responses", contentType)
 		return
 	}
@@ -278,6 +289,8 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 		} else {
 			consensus = consensusPartial
 		}
+		h.logger.Warn("hosts returned divergent responses",
+			zap.String("consensus", string(consensus)), zap.Int("groups", len(groups)))
 	}
 
 	ext := consensusExtension{Consensus: consensus}
@@ -293,14 +306,14 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 
 	extJSON, err := json.Marshal(ext)
 	if err != nil {
-		h.logger.Sugar().Errorw("failed to marshal consensus extension", "error", err)
+		h.logger.Error("failed to marshal consensus extension", zap.Error(err))
 		h.writeError(w, http.StatusInternalServerError, "internal error", contentType)
 		return
 	}
 
 	var hostResp graphQLResponse
 	if err := json.Unmarshal([]byte(groups[0].body), &hostResp); err != nil {
-		h.logger.Sugar().Errorw("failed to parse host response", "error", err)
+		h.logger.Error("failed to parse host response", zap.Error(err))
 		h.writeError(w, http.StatusBadGateway, "invalid host response", contentType)
 		return
 	}
@@ -313,7 +326,7 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 
 	body, err := json.Marshal(resp)
 	if err != nil {
-		h.logger.Sugar().Errorw("failed to marshal response", "error", err)
+		h.logger.Error("failed to marshal response", zap.Error(err))
 		h.writeError(w, http.StatusInternalServerError, "internal error", contentType)
 		return
 	}
@@ -322,7 +335,7 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(body)
 	if err != nil {
-		h.logger.Sugar().Errorw("failed to write response", "error", err)
+		h.logger.Warn("failed to write response", zap.Error(err))
 	}
 }
 
@@ -438,9 +451,10 @@ func negotiateContentType(accept string, supported []string) string {
 
 // writeError writes a GraphQL error response with the given status code and message.
 func (h *Handler) writeError(w http.ResponseWriter, status int, message string, contentType string) {
+	h.logger.Debug("request failed", zap.Int("status", status), zap.String("message", message))
 	body, err := json.Marshal(graphQLResponse{Errors: []gqlError{{Message: message}}})
 	if err != nil {
-		h.logger.Sugar().Errorw("failed to marshal error response", "error", err)
+		h.logger.Error("failed to marshal error response", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -448,6 +462,6 @@ func (h *Handler) writeError(w http.ResponseWriter, status int, message string, 
 	w.WriteHeader(status)
 	_, err = w.Write(body)
 	if err != nil {
-		h.logger.Sugar().Errorw("failed to write error response", "error", err)
+		h.logger.Warn("failed to write error response", zap.Error(err))
 	}
 }
