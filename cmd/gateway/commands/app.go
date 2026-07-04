@@ -12,7 +12,7 @@ import (
 const (
 	defaultTimeout             = 60 * time.Second
 	defaultInterval            = 10 * time.Second
-	defaultCollectionsInterval = 10 * time.Minute
+	defaultCollectionsInterval = 1 * time.Minute
 	defaultListenAddr          = ":8080"
 	defaultSampleSize          = 3
 
