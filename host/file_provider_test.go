@@ -28,5 +28,5 @@ func TestFileProvider(t *testing.T) {
 	defer cancel()
 	err = p.Run(ctx, register, nil)
 	require.NoError(t, err)
-	require.Eventually(t, func() bool { return cnt > 1 }, 1*time.Second, 50*time.Millisecond)
+	require.Greater(t, cnt, 1)
 }
