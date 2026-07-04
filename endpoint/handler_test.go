@@ -587,7 +587,7 @@ func TestComposeResponse(t *testing.T) {
 			responses:   []hostResponse{{err: errFail}, {err: errFail}},
 			contentType: contentTypeGraphQLResponse,
 			wantStatus:  http.StatusBadGateway,
-			wantBodyHas: "no successful hosts responses",
+			wantBodyHas: "no successful host responses",
 		},
 		{
 			name: "full consensus",

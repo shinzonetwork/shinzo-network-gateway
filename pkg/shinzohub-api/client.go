@@ -20,8 +20,8 @@ const (
 	maxDrainSize    = 1024 * 1024 // 1MiB
 )
 
-// ErrRequestError is returned when the upstream responds with a non-success HTTP status code.
-var ErrRequestError = errors.New("HTTP status code")
+// ErrUnexpectedStatus is returned when the upstream responds with a non-success HTTP status code.
+var ErrUnexpectedStatus = errors.New("unexpected HTTP status")
 
 // Client is a Shinzohub REST API client.
 type Client struct {
@@ -184,7 +184,7 @@ func doRequest[RespT any](ctx context.Context, c *Client, path string, paginatio
 
 	// everything >= HTTP 300 is an error
 	if resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("fetch %s: %w: %d", fullPath, ErrRequestError, resp.StatusCode)
+		return nil, fmt.Errorf("fetch %s: %w: %d", fullPath, ErrUnexpectedStatus, resp.StatusCode)
 	}
 
 	var out RespT
