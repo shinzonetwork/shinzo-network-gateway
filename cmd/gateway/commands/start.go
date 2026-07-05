@@ -65,9 +65,6 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// TODO(tzdybal): config/env/flag for host file
-	fileProvider := host.NewFileProvider("hosts.txt", logger)
-
 	shinzoURL := a.v.GetString(flagShinzohubURL)
 	shinzohubProvider, err := host.NewShinzohubProvider(shinzoURL, logger)
 	if err != nil {
@@ -86,7 +83,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 			ConnCheckInterval:          defaultInterval,
 			CollectionsRefreshInterval: defaultCollectionsInterval,
 		},
-		[]host.Provider{shinzohubProvider, fileProvider},
+		[]host.Provider{shinzohubProvider},
 		[]host.Observer{rtr},
 		connChecker,
 		collFetcher,
