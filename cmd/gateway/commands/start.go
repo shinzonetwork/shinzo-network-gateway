@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/endpoint"
@@ -35,6 +36,8 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 	cmd.Flags().String(flagListen, defaultListenAddr, "HTTP listen address for GraphQL endpoint")
 	cmd.Flags().Int(flagSample, defaultSampleSize, "number of hosts for query fan out")
 	cmd.Flags().String(flagShinzohubURL, "", "Base URL of the Shinzohub API to fetch information from")
+	cmd.Flags().String(flagLogLevel, defaultLogLevel, "log level (debug, info, warn, error)")
+	cmd.Flags().String(flagLogFormat, defaultLogFormat, "log format (console for humans, json for log collectors)")
 
 	err := a.v.BindPFlags(cmd.Flags())
 	if err != nil {
@@ -45,32 +48,33 @@ func (a *App) newStartCmd() (*cobra.Command, error) {
 }
 
 func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
-	logger, err := zap.NewDevelopment()
+	logger, err := a.newLogger()
+	if err != nil {
+		return fmt.Errorf("creating logger: %w", err)
+	}
 	defer func() {
 		_ = logger.Sync()
 	}()
-	if err != nil {
-		return fmt.Errorf("error while creating logger: %w", err)
-	}
 
-	logger.Sugar().Info("Starting Shinzo Network Gateway")
+	logger.Info("starting Shinzo Network Gateway",
+		zap.String("listen", a.v.GetString(flagListen)),
+		zap.Int("sampleSize", a.v.GetInt(flagSample)),
+		zap.String("shinzohubURL", a.v.GetString(flagShinzohubURL)),
+	)
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// TODO(tzdybal): config/env/flag for host file
-	fileProvider := host.NewFileProvider("hosts.txt", logger)
-
 	shinzoURL := a.v.GetString(flagShinzohubURL)
 	shinzohubProvider, err := host.NewShinzohubProvider(shinzoURL, logger)
 	if err != nil {
-		return fmt.Errorf("error while creating Shinzohub provider: %w", err)
+		return fmt.Errorf("creating Shinzohub provider: %w", err)
 	}
 
 	connChecker := host.NewHTTPConnectionChecker(defaultTimeout, logger)
 	collFetcher, err := host.NewShinzohubCollectionsFetcher(shinzoURL, defaultRefreshInterval, logger)
 	if err != nil {
-		return fmt.Errorf("error while creating Shinzohub collections fetcher: %w", err)
+		return fmt.Errorf("creating Shinzohub collections fetcher: %w", err)
 	}
 
 	rtr := router.New(logger)
@@ -79,7 +83,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 			ConnCheckInterval:          defaultInterval,
 			CollectionsRefreshInterval: defaultCollectionsInterval,
 		},
-		[]host.Provider{shinzohubProvider, fileProvider},
+		[]host.Provider{shinzohubProvider},
 		[]host.Observer{rtr},
 		connChecker,
 		collFetcher,
@@ -91,7 +95,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	handler := endpoint.NewHandler(validators, &endpoint.DefaultCollectionExtractor{}, rtr, sampleSize, logger)
 	endp, err := endpoint.New(a.v.GetString(flagListen), handler, logger)
 	if err != nil {
-		return fmt.Errorf("error while creating endpoint: %w", err)
+		return fmt.Errorf("creating endpoint: %w", err)
 	}
 
 	grp, ctx := errgroup.WithContext(ctx)
@@ -113,4 +117,48 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	return nil
+}
+
+// errInvalidLogFormat is returned when the log-format flag value is not recognized.
+var errInvalidLogFormat = errors.New("invalid log format")
+
+// newLogger builds a logger with the level and format taken from the log-level and log-format flags.
+func (a *App) newLogger() (*zap.Logger, error) {
+	level, err := zapcore.ParseLevel(a.v.GetString(flagLogLevel))
+	if err != nil {
+		return nil, fmt.Errorf("invalid log level %q: %w", a.v.GetString(flagLogLevel), err)
+	}
+
+	var cfg zap.Config
+	switch format := a.v.GetString(flagLogFormat); format {
+	case logFormatConsole:
+		cfg = zap.NewDevelopmentConfig()
+	case logFormatJSON:
+		cfg = zap.NewProductionConfig()
+		// keep every log entry; sampling would silently drop repeated messages
+		cfg.Sampling = nil
+		// use the field names and severity values recognized by Cloud Logging structured logs
+		cfg.EncoderConfig.MessageKey = "message"
+		cfg.EncoderConfig.TimeKey = "timestamp"
+		cfg.EncoderConfig.EncodeTime = zapcore.RFC3339NanoTimeEncoder
+		cfg.EncoderConfig.LevelKey = "severity"
+		cfg.EncoderConfig.EncodeLevel = encodeSeverity
+		cfg.EncoderConfig.EncodeDuration = zapcore.StringDurationEncoder
+	default:
+		return nil, fmt.Errorf("%w: %q (expected %s or %s)", errInvalidLogFormat, format, logFormatConsole, logFormatJSON)
+	}
+	cfg.Level = zap.NewAtomicLevelAt(level)
+	return cfg.Build()
+}
+
+// encodeSeverity maps zap levels to Cloud Logging LogSeverity values.
+func encodeSeverity(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+	switch {
+	case l == zapcore.WarnLevel:
+		enc.AppendString("WARNING")
+	case l >= zapcore.DPanicLevel:
+		enc.AppendString("CRITICAL")
+	default:
+		enc.AppendString(l.CapitalString())
+	}
 }

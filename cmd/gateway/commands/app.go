@@ -15,11 +15,18 @@ const (
 	defaultCollectionsInterval = 1 * time.Minute
 	defaultListenAddr          = ":8080"
 	defaultSampleSize          = 3
+	defaultLogLevel            = "info"
+	defaultLogFormat           = logFormatConsole
+
+	logFormatConsole = "console"
+	logFormatJSON    = "json"
 
 	flagListen       = "listen"
 	flagSample       = "sample-size"
 	flagTimeout      = "timeout"
 	flagShinzohubURL = "shinzohub-url"
+	flagLogLevel     = "log-level"
+	flagLogFormat    = "log-format"
 )
 
 // App is the main application struct holding configuration state.
@@ -78,7 +85,7 @@ func (a *App) initConfig() error {
 	} else {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return fmt.Errorf("error finding home directory: %w", err)
+			return fmt.Errorf("finding home directory: %w", err)
 		}
 		a.v.AddConfigPath(home)
 		a.v.SetConfigType("yaml")

@@ -27,14 +27,15 @@ func newMonitor(h Host, connChecker ConnectionChecker, collFetcher CollectionsFe
 		connChecker: connChecker,
 		collFetcher: collFetcher,
 		observers:   observers,
-		logger:      logger.With(zap.String("host", string(h))),
+		logger:      logger.Named("monitor").With(zap.String("host", string(h))),
 	}
 }
 
 func (m *monitor) checkColls(ctx context.Context) {
+	m.logger.Debug("fetching collections")
 	newColls, err := m.collFetcher.FetchCollections(ctx, m.h)
 	if err != nil {
-		m.logger.Sugar().Errorw("error while fetching collections", "error", err)
+		m.logger.Warn("failed to fetch collections", zap.Error(err))
 		return
 	}
 	slices.Sort(newColls)
@@ -46,10 +47,12 @@ func (m *monitor) checkConn(ctx context.Context) {
 	res := m.connChecker.CheckConnection(ctx, m.h)
 	if res.Online != m.online {
 		if res.Online {
+			m.logger.Info("host is online", zap.Duration("rtt", res.RTT))
 			m.notifyHostUp()
 			// fetch collections immediately
 			m.checkColls(ctx)
 		} else {
+			m.logger.Info("host is offline")
 			m.notifyCollsUpdate(m.colls, nil)
 			m.notifyHostDown()
 			m.colls = nil
@@ -101,6 +104,12 @@ func (m *monitor) notifyHostDown() {
 // It assumes that oldColls and newColls are sorted.
 func (m *monitor) notifyCollsUpdate(oldColls, newColls []string) {
 	added, removed := getSliceDiffs(oldColls, newColls)
+	if len(added) > 0 {
+		m.logger.Info("collections added", zap.Strings("collections", added))
+	}
+	if len(removed) > 0 {
+		m.logger.Info("collections removed", zap.Strings("collections", removed))
+	}
 
 	for _, o := range m.observers {
 		if len(added) > 0 {

@@ -12,9 +12,9 @@ import (
 
 var (
 	// ErrPoolNotSupported is returned if requested type of pool is not supported by Router.
-	ErrPoolNotSupported = errors.New("only single-collection pools are supported")
+	ErrPoolNotSupported = errors.New("queries spanning multiple collections are not supported")
 	// ErrPoolNotFound is returned when pool was not found by the Router.
-	ErrPoolNotFound = errors.New("pool not found")
+	ErrPoolNotFound = errors.New("no hosts serve the requested collection")
 )
 
 // Router selects the hosts for query based on information from Registry.
@@ -34,7 +34,7 @@ var (
 func New(logger *zap.Logger) *Router {
 	r := &Router{
 		pools:  make(map[string]*pool),
-		logger: logger.Named("Router"),
+		logger: logger.Named("router"),
 	}
 
 	return r
@@ -67,6 +67,7 @@ func (r *Router) Up(_ host.Host) {
 
 // Down implements host.Observer by removing the host from every pool it belongs to.
 func (r *Router) Down(h host.Host) {
+	r.logger.Debug("removing host from all pools", zap.String("host", string(h)))
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	for _, p := range r.pools {
@@ -76,6 +77,7 @@ func (r *Router) Down(h host.Host) {
 
 // CollectionsAdded implements host.Observer by adding the host to the pool for each given collection.
 func (r *Router) CollectionsAdded(h host.Host, colls []string) {
+	r.logger.Debug("adding host to pools", zap.String("host", string(h)), zap.Strings("collections", colls))
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
@@ -91,6 +93,7 @@ func (r *Router) CollectionsAdded(h host.Host, colls []string) {
 
 // CollectionsRemoved implements host.Observer by removing the host from the pool for each given collection.
 func (r *Router) CollectionsRemoved(h host.Host, colls []string) {
+	r.logger.Debug("removing host from pools", zap.String("host", string(h)), zap.Strings("collections", colls))
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 	for _, c := range colls {
