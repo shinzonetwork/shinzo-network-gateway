@@ -9,8 +9,6 @@ RUN CGO_ENABLED=0 go build -o /out/gateway ./cmd/gateway
 
 FROM cgr.dev/chainguard/static:latest
 COPY --from=build /out/gateway /gateway
-# TODO(tzdybal): remove once hosts are fetched from shinzohub
-COPY hosts.txt /hosts.txt
 EXPOSE 8080
 USER nonroot
 ENTRYPOINT ["/gateway"]
