@@ -3,7 +3,6 @@ package host
 import (
 	"context"
 	"errors"
-	"net/url"
 	"slices"
 	"time"
 
@@ -32,13 +31,13 @@ const (
 
 // NewShinzohubProvider creates a ShinzohubProvider that reads hosts from given shinzohub endpoint.
 func NewShinzohubProvider(baseURL string, logger *zap.Logger) (*ShinzohubProvider, error) {
-	// ParseRequestURI is more strict and rejects "", relative paths, etc
-	if _, err := url.ParseRequestURI(baseURL); err != nil {
+	c, err := shinzohub.NewClient(baseURL)
+	if err != nil {
 		return nil, err
 	}
 	return &ShinzohubProvider{
 		baseURL: baseURL,
-		client:  shinzohub.NewClient(baseURL),
+		client:  c,
 		logger:  logger.Named("shinzohub-provider"),
 	}, nil
 }

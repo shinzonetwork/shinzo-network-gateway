@@ -30,16 +30,20 @@ type Client struct {
 }
 
 // NewClient creates new Shinzohub API client.
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL string) (*Client, error) {
+	// ParseRequestURI is more strict and rejects "", relative paths, etc
+	if _, err := url.ParseRequestURI(baseURL); err != nil {
+		return nil, err
+	}
 	return &Client{
 		baseURL: baseURL,
 		client:  &http.Client{Timeout: DefaultTimeout},
-	}
+	}, nil
 }
 
 // GetHosts returns the paginated list of hosts known to the network.
 func (c *Client) GetHosts(ctx context.Context, pagination *PageRequest) (*QueryHostsResponse, error) {
-	return doRequest[QueryHostsResponse](ctx, c, "shinzonetwork/host/v1/hosts", pagination)
+	return doRequest[QueryHostsResponse](ctx, c, "shinzonetwork/host/v1/hosts", pagination, nil)
 }
 
 // GetAllHosts fetches every host by following pagination cursors until exhausted.
@@ -52,7 +56,7 @@ func (c *Client) GetAllHosts(ctx context.Context) ([]Host, error) {
 
 // GetPools returns the paginated list of pools.
 func (c *Client) GetPools(ctx context.Context, pagination *PageRequest) (*QueryPoolsResponse, error) {
-	return doRequest[QueryPoolsResponse](ctx, c, "shinzonetwork/host/v1/pools", pagination)
+	return doRequest[QueryPoolsResponse](ctx, c, "shinzonetwork/host/v1/pools", pagination, nil)
 }
 
 // GetAllPools fetches every pool by following pagination cursors until exhausted.
@@ -66,18 +70,18 @@ func (c *Client) GetAllPools(ctx context.Context) ([]Pool, error) {
 // GetPool returns a single pool identified by its address.
 func (c *Client) GetPool(ctx context.Context, poolAddress string) (*QueryPoolResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pool/%s", poolAddress)
-	return doRequest[QueryPoolResponse](ctx, c, path, nil)
+	return doRequest[QueryPoolResponse](ctx, c, path, nil, nil)
 }
 
 // GetPoolDetail returns a pool together with its hosts and demands, identified by the pool address.
 func (c *Client) GetPoolDetail(ctx context.Context, poolAddress string) (*QueryDetailResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pool/%s/detail", poolAddress)
-	return doRequest[QueryDetailResponse](ctx, c, path, nil)
+	return doRequest[QueryDetailResponse](ctx, c, path, nil, nil)
 }
 
 // GetPoolDetails returns the paginated list of pools together with their hosts and demands.
 func (c *Client) GetPoolDetails(ctx context.Context, pagination *PageRequest) (*QueryDetailsResponse, error) {
-	return doRequest[QueryDetailsResponse](ctx, c, "shinzonetwork/host/v1/details", pagination)
+	return doRequest[QueryDetailsResponse](ctx, c, "shinzonetwork/host/v1/details", pagination, nil)
 }
 
 // GetAllPoolDetails fetches every pool detail by following pagination cursors until exhausted.
@@ -91,7 +95,7 @@ func (c *Client) GetAllPoolDetails(ctx context.Context) ([]PoolDetail, error) {
 // GetPoolHosts returns the paginated list of hosts belonging to a pool, identified by the pool address.
 func (c *Client) GetPoolHosts(ctx context.Context, poolAddress string, pagination *PageRequest) (*QueryPoolHostsResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/pools/%s/hosts", poolAddress)
-	return doRequest[QueryPoolHostsResponse](ctx, c, path, pagination)
+	return doRequest[QueryPoolHostsResponse](ctx, c, path, pagination, nil)
 }
 
 // GetAllPoolHosts fetches every host of a pool by following pagination cursors until exhausted.
@@ -108,31 +112,54 @@ func (c *Client) GetAllPoolHosts(ctx context.Context, poolAddress string) ([]Poo
 // GetHost returns a single host identified by its address.
 func (c *Client) GetHost(ctx context.Context, address string) (*QueryHostResponse, error) {
 	path := fmt.Sprintf("shinzonetwork/host/v1/host/%s", address)
-	return doRequest[QueryHostResponse](ctx, c, path, nil)
+	return doRequest[QueryHostResponse](ctx, c, path, nil, nil)
 }
 
 // GetViews returns the paginated list of registered views.
-// TODO(tzdybal): impelmeent full filtering from QueryViewsRequest.
-func (c *Client) GetViews(ctx context.Context, pagination *PageRequest) (*QueryViewsResponse, error) {
-	return doRequest[QueryViewsResponse](ctx, c, "shinzonetwork/view/v1/views", pagination)
+// TODO(tzdybal): implement full filtering from QueryViewsRequest.
+func (c *Client) GetViews(ctx context.Context, pagination *PageRequest, params *QueryViewsRequest) (*QueryViewsResponse, error) {
+	var values url.Values
+	if params != nil {
+		values = make(url.Values)
+		if params.IncludeData {
+			values.Set("include_data", "true")
+		}
+		if params.IncludeMetadata {
+			values.Set("include_metadata", "true")
+		}
+	}
+	return doRequest[QueryViewsResponse](ctx, c, "shinzonetwork/view/v1/views", pagination, values)
 }
 
 // GetAllViews fetches every view by following pagination cursors until exhausted.
-func (c *Client) GetAllViews(ctx context.Context) ([]View, error) {
+func (c *Client) GetAllViews(ctx context.Context, filters *QueryViewsRequest) ([]View, error) {
+	fetcher := func(ctx context.Context, pagination *PageRequest) (*QueryViewsResponse, error) {
+		return c.GetViews(ctx, pagination, filters)
+	}
 	extractor := func(resp *QueryViewsResponse) ([]View, *PageResponse) {
 		return resp.Views, resp.Pagination
 	}
-	return getAll(ctx, c.GetViews, extractor)
+	return getAll(ctx, fetcher, extractor)
 }
 
 // GetView returns a single view identified by its contract address.
-// TODO(tzdybal): impelmeent full filtering from QueryViewRequest.
-func (c *Client) GetView(ctx context.Context, contractAddress string) (*QueryViewResponse, error) {
+// TODO(tzdybal): implement full filtering from QueryViewRequest.
+func (c *Client) GetView(ctx context.Context, contractAddress string, params *QueryViewRequest) (*QueryViewResponse, error) {
+	var values url.Values
+	if params != nil {
+		values = make(url.Values)
+		if params.IncludeData {
+			values.Set("include_data", "true")
+		}
+		if params.IncludeMetadata {
+			values.Set("include_metadata", "true")
+		}
+	}
 	path := fmt.Sprintf("shinzonetwork/view/v1/views/%s", contractAddress)
-	return doRequest[QueryViewResponse](ctx, c, path, nil)
+	return doRequest[QueryViewResponse](ctx, c, path, nil, values)
 }
 
-func doRequest[RespT any](ctx context.Context, c *Client, path string, pagination *PageRequest) (*RespT, error) {
+func doRequest[RespT any](ctx context.Context, c *Client, path string, pagination *PageRequest, params url.Values) (*RespT, error) {
 	fullPath, err := url.JoinPath(c.baseURL, path)
 	if err != nil {
 		return nil, err
@@ -143,7 +170,7 @@ func doRequest[RespT any](ctx context.Context, c *Client, path string, paginatio
 		return nil, err
 	}
 
-	prepareRequest(req, pagination)
+	prepareRequest(req, pagination, params)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -168,17 +195,22 @@ func doRequest[RespT any](ctx context.Context, c *Client, path string, paginatio
 	return &out, nil
 }
 
-func prepareRequest(req *http.Request, pagination *PageRequest) {
+func prepareRequest(req *http.Request, pagination *PageRequest, params url.Values) {
+	q := req.URL.Query()
 	if pagination != nil {
-		q := req.URL.Query()
 		if pagination.Key != "" {
 			q.Set("pagination.key", pagination.Key)
 		}
 		if pagination.Limit != 0 {
 			q.Set("pagination.limit", strconv.FormatUint(pagination.Limit, 10))
 		}
-		req.URL.RawQuery = q.Encode()
 	}
+	for k, vs := range params {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	req.URL.RawQuery = q.Encode()
 
 	req.Header.Set("Accept", "application/json")
 }
