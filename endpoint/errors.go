@@ -62,6 +62,9 @@ var ErrUnexpectedStatus = errors.New("unexpected HTTP status")
 // ErrResponseTooLarge is returned when an upstream host response exceeds the size limit.
 var ErrResponseTooLarge = errors.New("response too large")
 
+// ErrMissingExtensions is returned when a request is missing required GraphQL extensions.
+var ErrMissingExtensions = errors.New("extensions not specified")
+
 // requestErrorStatus returns the HTTP status for a GraphQL request error.
 // As defined in GraphQL-over-HTTP spec:
 //   - application/json responses to well-formed requests SHOULD use 200.
