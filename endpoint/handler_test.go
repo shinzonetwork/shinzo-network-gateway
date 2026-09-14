@@ -39,9 +39,18 @@ type mockSelector struct {
 	mock.Mock
 }
 
-func (m *mockSelector) SelectHosts(ctx context.Context, n int, collections []string) ([]host.Host, error) {
-	args := m.Called(ctx, n, collections)
+func (m *mockSelector) SelectHosts(ctx context.Context, n int, collections []string, members []host.Host) ([]host.Host, error) {
+	args := m.Called(ctx, n, collections, members)
 	return args.Get(0).([]host.Host), args.Error(1)
+}
+
+type mockResolver struct {
+	mock.Mock
+}
+
+func (m *mockResolver) ResolvePool(poolAddress string) (host.PoolRoute, bool) {
+	args := m.Called(poolAddress)
+	return args.Get(0).(host.PoolRoute), args.Bool(1)
 }
 
 type failValidator struct{}
@@ -190,7 +199,7 @@ func TestHandlerGetHostsResponses(t *testing.T) {
 			th := setupTestHosts(c.kinds)
 			defer th.cleanup()
 
-			h := NewHandler(nil, nil, nil, defaultSampleSize, logger)
+			h := NewHandler(nil, nil, nil, nil, defaultSampleSize, logger)
 			require.NotNil(t, h)
 
 			timeout := c.timeout
@@ -238,6 +247,7 @@ func TestHandler(t *testing.T) {
 		validators     []Validator
 		setupExtractor func(*mockExtractor)
 		setupSelector  func(*mockSelector, []host.Host)
+		setupResolver  func(*mockResolver, []host.Host)
 		wantStatus     int
 		wantBodyHas    string
 	}{
@@ -290,24 +300,30 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name: "selector error",
-			body: `{"query":"{ hero { name } }"}`,
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool"}}`,
 			setupExtractor: func(ext *mockExtractor) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
-			setupSelector: func(sel *mockSelector, _ []host.Host) {
-				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return([]host.Host(nil), errNoHosts)
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: true}, true)
+			},
+			setupSelector: func(sel *mockSelector, hosts []host.Host) {
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}, hosts).Return([]host.Host(nil), errNoHosts)
 			},
 			wantStatus:  http.StatusServiceUnavailable,
 			wantBodyHas: "no hosts",
 		},
 		{
 			name: "successful query",
-			body: `{"query":"{ hero { name } }"}`,
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool"}}`,
 			setupExtractor: func(ext *mockExtractor) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: true}, true)
+			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}, hosts).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
@@ -342,13 +358,16 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name:       "limit ok",
-			body:       `{"query":"{ hero(limit: 100) { name } }"}`,
+			body:       `{"query":"{ hero(limit: 100) { name } }","extensions":{"pool_address":"0xpool"}}`,
 			validators: []Validator{NewLimitValidator(100)},
 			setupExtractor: func(ext *mockExtractor) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero(limit: 100) { name } }")).Return([]string{"hero"}, nil)
 			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: true}, true)
+			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}, hosts).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
@@ -362,37 +381,46 @@ func TestHandler(t *testing.T) {
 		},
 		{
 			name:       "limit ok, order ok",
-			body:       `{"query":"{ hero(limit: 10, order: {name: ASC}) { name } }"}`,
+			body:       `{"query":"{ hero(limit: 10, order: {name: ASC}) { name } }","extensions":{"pool_address":"0xpool"}}`,
 			validators: []Validator{NewLimitValidator(100), &OrderValidator{}},
 			setupExtractor: func(ext *mockExtractor) {
 				ext.On("ExtractCollections", mock.Anything).Return([]string{"hero"}, nil)
 			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: true}, true)
+			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}, hosts).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
 		},
 		{
 			name: "fanout from extensions overrides default sample size",
-			body: `{"query":"{ hero { name } }","extensions":{"fanout":5}}`,
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool","fanout":5}}`,
 			setupExtractor: func(ext *mockExtractor) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: true}, true)
+			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, 5, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, 5, []string{"hero"}, hosts).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
 		},
 		{
 			name: "zero fanout in extensions falls back to default sample size",
-			body: `{"query":"{ hero { name } }","extensions":{"fanout":0}}`,
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool","fanout":0}}`,
 			setupExtractor: func(ext *mockExtractor) {
 				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
 			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: true}, true)
+			},
 			setupSelector: func(sel *mockSelector, hosts []host.Host) {
-				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}).Return(hosts, nil)
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}, hosts).Return(hosts, nil)
 			},
 			wantStatus:  http.StatusOK,
 			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
@@ -405,6 +433,66 @@ func TestHandler(t *testing.T) {
 			},
 			wantStatus:  http.StatusBadRequest,
 			wantBodyHas: "invalid extensions",
+		},
+		{
+			name: "query without a signed pool is rejected",
+			body: `{"query":"{ hero { name } }"}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: ErrMissingPool.Error(),
+		},
+		{
+			name: "signed pool routes to pool members",
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool"}}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: true}, true)
+			},
+			setupSelector: func(sel *mockSelector, hosts []host.Host) {
+				sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{"hero"}, hosts).Return(hosts, nil)
+			},
+			wantStatus:  http.StatusOK,
+			wantBodyHas: `{"data":{"hero":{"name":"Luke"}},"extensions":{"consensus":"full"}}`,
+		},
+		{
+			name: "unknown signed pool is unavailable",
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool"}}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			setupResolver: func(rslv *mockResolver, _ []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{}, false)
+			},
+			wantStatus:  http.StatusServiceUnavailable,
+			wantBodyHas: ErrUnknownPool.Error(),
+		},
+		{
+			name: "inactive signed pool is unavailable",
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool"}}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "hero", Members: hosts, IsActive: false}, true)
+			},
+			wantStatus:  http.StatusServiceUnavailable,
+			wantBodyHas: ErrPoolInactive.Error(),
+		},
+		{
+			name: "signed pool serving another view is a bad request",
+			body: `{"query":"{ hero { name } }","extensions":{"pool_address":"0xpool"}}`,
+			setupExtractor: func(ext *mockExtractor) {
+				ext.On("ExtractCollections", mustParseQuery(t, "{ hero { name } }")).Return([]string{"hero"}, nil)
+			},
+			setupResolver: func(rslv *mockResolver, hosts []host.Host) {
+				rslv.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: "villain", Members: hosts, IsActive: true}, true)
+			},
+			wantStatus:  http.StatusBadRequest,
+			wantBodyHas: ErrPoolViewMismatch.Error(),
 		},
 	}
 
@@ -419,14 +507,18 @@ func TestHandler(t *testing.T) {
 			defer okHost.Close()
 			ext := &mockExtractor{}
 			sel := &mockSelector{}
+			res := &mockResolver{}
 			if c.setupExtractor != nil {
 				c.setupExtractor(ext)
 			}
 			if c.setupSelector != nil {
 				c.setupSelector(sel, []host.Host{host.Host(okHost.URL)})
 			}
+			if c.setupResolver != nil {
+				c.setupResolver(res, []host.Host{host.Host(okHost.URL)})
+			}
 
-			h := NewHandler(c.validators, ext, sel, defaultSampleSize, logger)
+			h := NewHandler(c.validators, ext, sel, res, defaultSampleSize, logger)
 
 			accept := c.accept
 			if accept == "" {
@@ -454,6 +546,7 @@ func TestHandler(t *testing.T) {
 
 			ext.AssertExpectations(t)
 			sel.AssertExpectations(t)
+			res.AssertExpectations(t)
 		})
 	}
 }
@@ -693,7 +786,7 @@ func TestComposeResponse(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 
-			h := NewHandler(nil, nil, nil, defaultSampleSize, logger)
+			h := NewHandler(nil, nil, nil, nil, defaultSampleSize, logger)
 			w := httptest.NewRecorder()
 
 			h.composeResponse(w, c.responses, c.contentType)
@@ -818,16 +911,21 @@ func TestHandlerForwardsHostAndAuth(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	hosts := []host.Host{host.Host(srv.URL)}
+
 	ext := &mockExtractor{}
 	ext.On("ExtractCollections", mock.Anything).Return([]string{collection}, nil)
 
+	res := &mockResolver{}
+	res.On("ResolvePool", "0xpool").Return(host.PoolRoute{Collection: collection, Members: hosts, IsActive: true}, true)
+
 	sel := &mockSelector{}
-	sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{collection}).Return([]host.Host{host.Host(srv.URL)}, nil)
+	sel.On("SelectHosts", mock.Anything, defaultSampleSize, []string{collection}, hosts).Return(hosts, nil)
 
 	logger, _ := zap.NewDevelopment()
-	h := NewHandler(nil, ext, sel, defaultSampleSize, logger)
+	h := NewHandler(nil, ext, sel, res, defaultSampleSize, logger)
 
-	req := httptest.NewRequest(http.MethodPost, "http://"+originalHost+"/graphql", strings.NewReader(`{"query":"{ TestView { id } }"}`))
+	req := httptest.NewRequest(http.MethodPost, "http://"+originalHost+"/graphql", strings.NewReader(`{"query":"{ TestView { id } }","extensions":{"pool_address":"0xpool"}}`))
 	req.Host = originalHost
 	req.Header.Set("Content-Type", contentTypeJSON)
 	req.Header.Set("Accept", contentTypeGraphQLResponse)
