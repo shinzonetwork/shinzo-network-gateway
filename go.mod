@@ -1,6 +1,6 @@
 module github.com/shinzonetwork/shinzo-network-gateway
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/goccy/go-json v0.10.6
@@ -9,7 +9,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/vektah/gqlparser/v2 v2.5.37
 	go.uber.org/zap v1.28.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 )
 
 require (
