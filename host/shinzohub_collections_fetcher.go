@@ -3,6 +3,7 @@ package host
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,9 @@ type ShinzohubCollectionsFetcher struct {
 	mtx         sync.Mutex
 	collections map[Host][]string
 
+	poolMtx    sync.RWMutex
+	poolRoutes map[string]PoolRoute
+
 	logger *zap.Logger
 }
 
@@ -37,6 +41,7 @@ func NewShinzohubCollectionsFetcher(baseURL string, refreshInterval time.Duratio
 		client:          c,
 		refreshInterval: refreshInterval,
 		collections:     make(map[Host][]string),
+		poolRoutes:      make(map[string]PoolRoute),
 		logger:          logger.Named("shinzohub-collections-fetcher"),
 	}, nil
 }
@@ -95,6 +100,7 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 	}
 
 	collsByHost := make(map[Host][]string)
+	poolRoutes := make(map[string]PoolRoute, len(pools))
 	for _, p := range pools {
 		coll, ok := collsByView[p.Pool.ViewAddress]
 		if !ok {
@@ -102,6 +108,7 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 				zap.String("pool", p.Pool.PoolAddress), zap.String("view", p.Pool.ViewAddress))
 			continue
 		}
+		members := make([]Host, 0, len(p.Hosts))
 		for _, h := range p.Hosts {
 			endpoint, ok := endpointByAddress[h.HostAddress]
 			if !ok {
@@ -110,8 +117,17 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 				continue
 			}
 			collsByHost[endpoint] = append(collsByHost[endpoint], coll)
+			members = append(members, endpoint)
+		}
+		// Key by lowercase address so a checksummed pool_address from the client
+		// resolves regardless of the case shinzohub stores.
+		poolRoutes[strings.ToLower(p.Pool.PoolAddress)] = PoolRoute{
+			Collection: coll,
+			Members:    members,
+			IsActive:   p.IsActive,
 		}
 	}
+	f.setPoolRoutes(poolRoutes)
 
 	// dedup in case same view is served by many pools
 	for h, colls := range collsByHost {
@@ -123,4 +139,20 @@ func (f *ShinzohubCollectionsFetcher) refresh(ctx context.Context) (map[Host][]s
 		zap.Int("views", len(views)), zap.Int("hosts", len(hosts)), zap.Int("pools", len(pools)),
 		zap.Int("hostsWithCollections", len(collsByHost)))
 	return collsByHost, nil
+}
+
+func (f *ShinzohubCollectionsFetcher) setPoolRoutes(routes map[string]PoolRoute) {
+	f.poolMtx.Lock()
+	defer f.poolMtx.Unlock()
+	f.poolRoutes = routes
+}
+
+// ResolvePool returns the routing information for a pool by its address. The
+// lookup is case-insensitive. ok is false if no pool with that address was seen
+// in the last refresh.
+func (f *ShinzohubCollectionsFetcher) ResolvePool(poolAddress string) (PoolRoute, bool) {
+	f.poolMtx.RLock()
+	defer f.poolMtx.RUnlock()
+	r, ok := f.poolRoutes[strings.ToLower(poolAddress)]
+	return r, ok
 }

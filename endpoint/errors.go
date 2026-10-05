@@ -56,6 +56,20 @@ var ErrInvalidOrder = errors.New("invalid order")
 // (a fragment spread or inline fragment).
 var ErrUnsupportedSelection = errors.New("unsupported root selection")
 
+// ErrMissingPool is returned when a query carries no signed pool address. Every
+// query must name the pool it bills to.
+var ErrMissingPool = errors.New("query is missing a signed pool address")
+
+// ErrUnknownPool is returned when the signed pool address is not known to the gateway.
+var ErrUnknownPool = errors.New("unknown pool")
+
+// ErrPoolInactive is returned when the signed pool exists but is not active.
+var ErrPoolInactive = errors.New("pool is not active")
+
+// ErrPoolViewMismatch is returned when the query does not target the view the
+// signed pool serves.
+var ErrPoolViewMismatch = errors.New("query does not match the signed pool's view")
+
 // ErrUnexpectedStatus is returned when an upstream host responds with a non-2xx status.
 var ErrUnexpectedStatus = errors.New("unexpected HTTP status")
 
