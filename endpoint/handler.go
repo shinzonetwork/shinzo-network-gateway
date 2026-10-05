@@ -126,7 +126,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	validationReq := &ValidationRequest{Query: query, Header: r.Header}
+	validationReq := &ValidationRequest{Query: query, Extensions: gqlReq.Extensions, Header: r.Header}
 	for _, v := range h.validators {
 		if err := v.Validate(validationReq); err != nil {
 			h.writeError(w, requestErrorStatus(contentType), fmt.Errorf("%w: %w", ErrValidation, err).Error(), contentType)
