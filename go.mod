@@ -3,7 +3,7 @@ module github.com/shinzonetwork/shinzo-network-gateway
 go 1.26.0
 
 require (
-	github.com/goccy/go-json v0.10.6
+	github.com/goccy/go-json v0.11.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.12.1
