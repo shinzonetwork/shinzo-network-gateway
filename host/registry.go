@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -54,7 +56,7 @@ func NewRegistry(
 	collFetcher CollectionsFetcher,
 	logger *zap.Logger,
 ) *Registry {
-	return &Registry{
+	r := &Registry{
 		config:      config,
 		connChecker: connChecker,
 		collFetcher: collFetcher,
@@ -63,6 +65,22 @@ func NewRegistry(
 		monitors:    make(map[Host]context.CancelFunc),
 		logger:      logger.Named("registry"),
 	}
+
+	_, err := otel.Meter("github.com/shinzonetwork/shinzo-network-gateway/host").Int64ObservableGauge("shinzo.gateway.hosts.known",
+		metric.WithDescription("Hosts registered by the host providers, online or not."),
+		metric.WithUnit("{host}"),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			r.mtx.Lock()
+			defer r.mtx.Unlock()
+			o.Observe(int64(len(r.monitors)))
+			return nil
+		}),
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+
+	return r
 }
 
 // Run launches all providers and begins processing host events.
