@@ -696,7 +696,7 @@ func TestComposeResponse(t *testing.T) {
 			h := NewHandler(nil, nil, nil, defaultSampleSize, logger)
 			w := httptest.NewRecorder()
 
-			h.composeResponse(w, c.responses, c.contentType)
+			h.composeResponse(t.Context(), w, c.responses, c.contentType)
 
 			assert.Equal(t, c.wantStatus, w.Code)
 			assert.Contains(t, w.Body.String(), c.wantBodyHas)

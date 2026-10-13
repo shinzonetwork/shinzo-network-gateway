@@ -19,7 +19,10 @@ import (
 	"github.com/shinzonetwork/shinzo-network-gateway/router"
 )
 
-const shutdownTimeout = 30 * time.Second
+const (
+	shutdownTimeout          = 30 * time.Second
+	telemetryShutdownTimeout = 10 * time.Second
+)
 
 // TODO(tzdybal): add configuration option.
 const (
@@ -64,6 +67,20 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	otelShutdown, err := setupOTel(ctx)
+	if err != nil {
+		logger.Warn("OpenTelemetry setup failed, metrics disabled", zap.Error(err))
+	} else {
+		defer func() {
+			// the app context is cancelled by now; use a fresh one so the final export is not lost
+			ctx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
+			defer cancel()
+			if err := otelShutdown(ctx); err != nil {
+				logger.Warn("telemetry shutdown failed", zap.Error(err))
+			}
+		}()
+	}
 
 	shinzoURL := a.v.GetString(flagShinzohubURL)
 	shinzohubProvider, err := host.NewShinzohubProvider(shinzoURL, logger)
