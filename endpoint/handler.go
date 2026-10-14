@@ -74,6 +74,8 @@ type handlerMetrics struct {
 
 func newHandlerMetrics() handlerMetrics {
 	meter := otel.Meter("github.com/shinzonetwork/shinzo-network-gateway/endpoint")
+	// OTel semantic-conventions boundaries for HTTP durations, in seconds.
+	durationBuckets := metric.WithExplicitBucketBoundaries(0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10) //nolint:mnd // bucket boundaries
 	requests, err := meter.Int64Counter("shinzo.gateway.requests",
 		metric.WithDescription("GraphQL requests handled by the gateway, by result."),
 		metric.WithUnit("{request}"),
@@ -83,14 +85,16 @@ func newHandlerMetrics() handlerMetrics {
 	}
 	requestDuration, err := meter.Float64Histogram("shinzo.gateway.request.duration",
 		metric.WithDescription("Duration of handling one GraphQL request, by result."),
-		metric.WithUnit("ms"),
+		metric.WithUnit("s"),
+		durationBuckets,
 	)
 	if err != nil {
 		otel.Handle(err)
 	}
 	upstreamDuration, err := meter.Float64Histogram("shinzo.gateway.upstream.duration",
 		metric.WithDescription("Duration of one query sent to a host, by result."),
-		metric.WithUnit("ms"),
+		metric.WithUnit("s"),
+		durationBuckets,
 	)
 	if err != nil {
 		otel.Handle(err)
@@ -201,7 +205,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// a fresh context: the request context may already be canceled
 	ctx := context.WithoutCancel(r.Context())
 	h.metrics.requests.Add(ctx, 1, h.metrics.results[result])
-	h.metrics.requestDuration.Record(ctx, float64(time.Since(start))/float64(time.Millisecond), h.metrics.results[result])
+	h.metrics.requestDuration.Record(ctx, time.Since(start).Seconds(), h.metrics.results[result])
 }
 
 // serve handles the request and returns its result for metrics.
@@ -388,7 +392,7 @@ func (h *Handler) recordUpstream(ctx context.Context, start time.Time, reason st
 		outcome = h.metrics.upstreamFailure
 		h.countUpstreamError(ctx, reason, err)
 	}
-	h.metrics.upstreamDuration.Record(ctx, float64(time.Since(start))/float64(time.Millisecond), outcome)
+	h.metrics.upstreamDuration.Record(ctx, time.Since(start).Seconds(), outcome)
 }
 
 type consensusLevel string

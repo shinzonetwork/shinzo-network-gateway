@@ -38,6 +38,8 @@ OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20<base64 of instanceID:token>
 OTEL_RESOURCE_ATTRIBUTES=service.instance.id=<unique-node-id>
 ```
 
+If metrics are enabled but misconfigured (e.g. a malformed `OTEL_RESOURCE_ATTRIBUTES` entry or an unknown exporter), the gateway refuses to start.
+
 ## GraphQL extensions
 
 The gateway is GraphQL-over-HTTP compliant and accepts the standard request body fields: `query`, `operationName`, `variables`, and `extensions`. Any `extensions` you send on a request are forwarded verbatim to upstream hosts; the gateway itself does not interpret them.

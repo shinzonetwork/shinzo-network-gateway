@@ -68,19 +68,19 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// telemetry enabled but misconfigured is fatal: never run with missing or mislabelled metrics
 	otelShutdown, err := setupOTel(ctx)
 	if err != nil {
-		logger.Warn("OpenTelemetry setup failed, metrics disabled", zap.Error(err))
-	} else {
-		defer func() {
-			// the app context is cancelled by now; use a fresh one so the final export is not lost
-			ctx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
-			defer cancel()
-			if err := otelShutdown(ctx); err != nil {
-				logger.Warn("telemetry shutdown failed", zap.Error(err))
-			}
-		}()
+		return fmt.Errorf("telemetry setup: %w", err)
 	}
+	defer func() {
+		// the app context is cancelled by now; use a fresh one so the final export is not lost
+		ctx, cancel := context.WithTimeout(context.Background(), telemetryShutdownTimeout)
+		defer cancel()
+		if err := otelShutdown(ctx); err != nil {
+			logger.Warn("telemetry shutdown failed", zap.Error(err))
+		}
+	}()
 
 	shinzoURL := a.v.GetString(flagShinzohubURL)
 	shinzohubProvider, err := host.NewShinzohubProvider(shinzoURL, logger)
