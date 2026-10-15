@@ -69,7 +69,7 @@ func (a *App) startGateway(cmd *cobra.Command, _ []string) error {
 	defer stop()
 
 	// telemetry enabled but misconfigured is fatal: never run with missing or mislabelled metrics
-	otelShutdown, err := setupOTel(ctx)
+	otelShutdown, err := setupOTel(ctx, logger)
 	if err != nil {
 		return fmt.Errorf("telemetry setup: %w", err)
 	}

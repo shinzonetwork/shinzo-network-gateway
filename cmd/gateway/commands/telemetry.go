@@ -13,11 +13,17 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.37.0"
+	"go.uber.org/zap"
 )
 
-// setupOTel configures metrics export. It is a no-op unless OTEL_METRICS_EXPORTER is set;
-// exporter, endpoint, headers and interval come from the standard OTEL_* environment variables.
-func setupOTel(ctx context.Context) (func(context.Context) error, error) {
+// setupOTel routes OTel errors (e.g. failed exports) to logger and configures
+// metrics export when OTEL_METRICS_EXPORTER is set; exporter, endpoint, headers
+// and interval come from the standard OTEL_* environment variables.
+func setupOTel(ctx context.Context, logger *zap.Logger) (func(context.Context) error, error) {
+	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
+		logger.Error("OpenTelemetry error", zap.Error(err))
+	}))
+
 	if os.Getenv("OTEL_METRICS_EXPORTER") == "" {
 		return func(context.Context) error { return nil }, nil
 	}

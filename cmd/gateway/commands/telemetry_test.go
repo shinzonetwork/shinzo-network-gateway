@@ -2,12 +2,16 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/sdk/resource"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // Tests in this file use t.Setenv, so they cannot run in parallel.
@@ -31,9 +35,15 @@ func TestSetupOTel(t *testing.T) {
 			t.Setenv("OTEL_METRICS_EXPORTER", tt.exporter)
 			t.Setenv("OTEL_RESOURCE_ATTRIBUTES", tt.attrs)
 
-			shutdown, err := setupOTel(t.Context())
+			core, logs := observer.New(zap.ErrorLevel)
+
+			shutdown, err := setupOTel(t.Context(), zap.New(core))
 			if !tt.wantErr {
 				require.NoError(t, err)
+				otel.Handle(errors.New("export failed")) //nolint:err113 // test error
+				entries := logs.FilterMessage("OpenTelemetry error").All()
+				require.Len(t, entries, 1, "OTel errors must go to the logger")
+				assert.Equal(t, "export failed", entries[0].ContextMap()["error"])
 				require.NoError(t, shutdown(t.Context()))
 				return
 			}
