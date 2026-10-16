@@ -35,6 +35,18 @@ func (p *pool) get(n int) ([]host.Host, error) {
 	return p.hosts.Sample(n)
 }
 
+// addHostsTo adds the pool's hosts to set and returns the pool size.
+func (p *pool) addHostsTo(set map[host.Host]struct{}) int {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	hosts := p.hosts.Pool()
+	for _, h := range hosts {
+		set[h] = struct{}{}
+	}
+	return len(hosts)
+}
+
 func (p *pool) add(h host.Host) {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()

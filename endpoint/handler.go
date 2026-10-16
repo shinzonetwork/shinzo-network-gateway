@@ -15,6 +15,9 @@ import (
 	"time"
 
 	"github.com/goccy/go-json"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
@@ -32,8 +35,115 @@ type Handler struct {
 	selector   HostsSelector
 	client     *http.Client
 	logger     *zap.Logger
+	metrics    handlerMetrics
 
 	defaultSampleSize int
+}
+
+// Values of the result attribute of shinzo.gateway.requests and shinzo.gateway.request.duration.
+const (
+	resultSuccess       = "success"
+	resultInvalid       = "invalid"        // the request was rejected before routing
+	resultNoHosts       = "no_hosts"       // no hosts serve the requested collections
+	resultUpstreamError = "upstream_error" // no usable host response
+	resultError         = "error"          // internal gateway error
+)
+
+// Values of the reason attribute of shinzo.gateway.upstream.errors.
+const (
+	reasonRequest   = "request"   // the host request could not be built
+	reasonTransport = "transport" // connection error or timeout
+	reasonRead      = "read"      // the response body could not be read
+	reasonTooLarge  = "too_large" // the response body exceeds the size limit
+	reasonStatus    = "status"    // non-2xx HTTP status
+)
+
+type handlerMetrics struct {
+	requests         metric.Int64Counter
+	requestDuration  metric.Float64Histogram
+	upstreamDuration metric.Float64Histogram
+	upstreamErrors   metric.Int64Counter
+	consensus        metric.Int64Counter
+
+	results         map[string]metric.MeasurementOption
+	upstreamSuccess metric.MeasurementOption
+	upstreamFailure metric.MeasurementOption
+	upstreamReasons map[string]metric.MeasurementOption
+	consensusLevels map[consensusLevel]metric.MeasurementOption
+}
+
+func newHandlerMetrics() handlerMetrics {
+	meter := otel.Meter("github.com/shinzonetwork/shinzo-network-gateway/endpoint")
+	// OTel semantic-conventions boundaries for HTTP durations, in seconds.
+	durationBuckets := metric.WithExplicitBucketBoundaries(0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10) //nolint:mnd // bucket boundaries
+	requests, err := meter.Int64Counter("shinzo.gateway.requests",
+		metric.WithDescription("GraphQL requests handled by the gateway, by result."),
+		metric.WithUnit("{request}"),
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+	requestDuration, err := meter.Float64Histogram("shinzo.gateway.request.duration",
+		metric.WithDescription("Duration of handling one GraphQL request, by result."),
+		metric.WithUnit("s"),
+		durationBuckets,
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+	upstreamDuration, err := meter.Float64Histogram("shinzo.gateway.upstream.duration",
+		metric.WithDescription("Duration of one query sent to a host, by result."),
+		metric.WithUnit("s"),
+		durationBuckets,
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+	upstreamErrors, err := meter.Int64Counter("shinzo.gateway.upstream.errors",
+		metric.WithDescription("Failed queries to hosts, by reason. Queries canceled by the client are not counted."),
+		metric.WithUnit("{error}"),
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+	consensus, err := meter.Int64Counter("shinzo.gateway.consensus",
+		metric.WithDescription("Compared host responses, by consensus level (full, partial, none)."),
+		metric.WithUnit("{request}"),
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+
+	m := handlerMetrics{
+		requests:         requests,
+		requestDuration:  requestDuration,
+		upstreamDuration: upstreamDuration,
+		upstreamErrors:   upstreamErrors,
+		consensus:        consensus,
+		results:          make(map[string]metric.MeasurementOption),
+		upstreamSuccess:  metric.WithAttributeSet(attribute.NewSet(attribute.String("result", "success"))),
+		upstreamFailure:  metric.WithAttributeSet(attribute.NewSet(attribute.String("result", "error"))),
+		upstreamReasons:  make(map[string]metric.MeasurementOption),
+		consensusLevels:  make(map[consensusLevel]metric.MeasurementOption),
+	}
+	for _, r := range []string{resultSuccess, resultInvalid, resultNoHosts, resultUpstreamError, resultError} {
+		m.results[r] = metric.WithAttributeSet(attribute.NewSet(attribute.String("result", r)))
+	}
+	for _, r := range []string{reasonRequest, reasonTransport, reasonRead, reasonTooLarge, reasonStatus} {
+		m.upstreamReasons[r] = metric.WithAttributeSet(attribute.NewSet(attribute.String("reason", r)))
+	}
+	for _, c := range []consensusLevel{consensusFull, consensusPartial, consensusNone} {
+		m.consensusLevels[c] = metric.WithAttributeSet(attribute.NewSet(attribute.String("consensus", string(c))))
+	}
+	return m
+}
+
+// countUpstreamError counts a failed host query. Queries canceled by the client are an expected outcome.
+func (h *Handler) countUpstreamError(ctx context.Context, reason string, err error) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	h.metrics.upstreamErrors.Add(ctx, 1, h.metrics.upstreamReasons[reason])
 }
 
 var _ http.Handler = &Handler{}
@@ -84,23 +194,34 @@ func NewHandler(validators []Validator, extractor CollectionsExtractor, selector
 		selector:          selector,
 		client:            &http.Client{Transport: transport},
 		logger:            logger.Named("handler"),
+		metrics:           newHandlerMetrics(),
 		defaultSampleSize: defaultSampleSize,
 	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	result := h.serve(w, r)
+	// a fresh context: the request context may already be canceled
+	ctx := context.WithoutCancel(r.Context())
+	h.metrics.requests.Add(ctx, 1, h.metrics.results[result])
+	h.metrics.requestDuration.Record(ctx, time.Since(start).Seconds(), h.metrics.results[result])
+}
+
+// serve handles the request and returns its result for metrics.
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request) string {
 	h.logger.Debug("handling GraphQL request", zap.String("remote", r.RemoteAddr))
 
 	contentType := getContentType(r)
 	if contentType == "" {
 		w.WriteHeader(http.StatusNotAcceptable)
-		return
+		return resultInvalid
 	}
 
 	reqContentType, _, _ := strings.Cut(r.Header.Get("Content-Type"), ";")
 	if strings.TrimSpace(reqContentType) != contentTypeJSON {
 		h.writeError(w, http.StatusUnsupportedMediaType, "unsupported Content-Type", contentType)
-		return
+		return resultInvalid
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
@@ -111,51 +232,51 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			status = http.StatusRequestEntityTooLarge
 		}
 		h.writeError(w, status, err.Error(), contentType)
-		return
+		return resultInvalid
 	}
 
 	var gqlReq graphQLRequest
 	if err := json.Unmarshal(body, &gqlReq); err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid JSON body", contentType)
-		return
+		return resultInvalid
 	}
 
 	query, err := parseQuery(gqlReq.Query)
 	if err != nil {
 		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
-		return
+		return resultInvalid
 	}
 
 	validationReq := &ValidationRequest{Query: query, Header: r.Header}
 	for _, v := range h.validators {
 		if err := v.Validate(validationReq); err != nil {
 			h.writeError(w, requestErrorStatus(contentType), fmt.Errorf("%w: %w", ErrValidation, err).Error(), contentType)
-			return
+			return resultInvalid
 		}
 	}
 
 	collections, err := h.extractor.ExtractCollections(query)
 	if err != nil {
 		h.writeError(w, requestErrorStatus(contentType), err.Error(), contentType)
-		return
+		return resultInvalid
 	}
 
 	n, err := h.getFanout(gqlReq.Extensions)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid extensions", contentType)
-		return
+		return resultInvalid
 	}
 	h.logger.Debug("selecting hosts", zap.Strings("collections", collections), zap.Int("fanout", n))
 	hosts, err := h.selector.SelectHosts(r.Context(), n, collections)
 	if err != nil {
 		h.logger.Warn("failed to select hosts", zap.Strings("collections", collections), zap.Error(err))
 		h.writeError(w, http.StatusServiceUnavailable, err.Error(), contentType)
-		return
+		return resultNoHosts
 	}
 
 	responses := h.getHostsResponses(r.Context(), hosts, body, r.Host, r.Header.Get("Authorization"))
 
-	h.composeResponse(w, responses, contentType)
+	return h.composeResponse(r.Context(), w, responses, contentType)
 }
 
 func (h *Handler) getFanout(ext json.RawMessage) (int, error) {
@@ -209,6 +330,7 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte, ho
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		logger.Warn("failed to build host request", zap.Error(err))
+		h.countUpstreamError(ctx, reasonRequest, err)
 		return hostResponse{err: err}
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -226,6 +348,7 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte, ho
 	resp, err := h.client.Do(req)
 	if err != nil {
 		logger.Warn("host query failed", zap.Duration("duration", time.Since(start)), zap.Error(err))
+		h.recordUpstream(ctx, start, reasonTransport, err)
 		return hostResponse{err: err}
 	}
 	defer func() {
@@ -238,22 +361,38 @@ func (h *Handler) queryHost(ctx context.Context, host host.Host, body []byte, ho
 	duration := time.Since(start)
 	if err != nil {
 		logger.Warn("failed to read host response", zap.Duration("duration", duration), zap.Error(err))
+		h.recordUpstream(ctx, start, reasonRead, err)
 		return hostResponse{err: err}
 	}
 
 	if len(respBody) > maxResponseBodySize {
 		logger.Warn("host response too large", zap.Int("maxSize", maxResponseBodySize))
-		return hostResponse{err: fmt.Errorf("%w: host %s", ErrResponseTooLarge, host)}
+		err := fmt.Errorf("%w: host %s", ErrResponseTooLarge, host)
+		h.recordUpstream(ctx, start, reasonTooLarge, err)
+		return hostResponse{err: err}
 	}
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		logger.Warn("host returned error status", zap.Int("status", resp.StatusCode), zap.Duration("duration", duration))
-		return hostResponse{err: fmt.Errorf("%w: %d from host %s", ErrUnexpectedStatus, resp.StatusCode, host)}
+		err := fmt.Errorf("%w: %d from host %s", ErrUnexpectedStatus, resp.StatusCode, host)
+		h.recordUpstream(ctx, start, reasonStatus, err)
+		return hostResponse{err: err}
 	}
 
 	logger.Debug("host query succeeded",
 		zap.Int("status", resp.StatusCode), zap.Int("responseSize", len(respBody)), zap.Duration("duration", duration))
+	h.recordUpstream(ctx, start, "", nil)
 	return hostResponse{response: respBody}
+}
+
+// recordUpstream records the duration of a host query sent at start and, if err is not nil, counts it by reason.
+func (h *Handler) recordUpstream(ctx context.Context, start time.Time, reason string, err error) {
+	outcome := h.metrics.upstreamSuccess
+	if err != nil {
+		outcome = h.metrics.upstreamFailure
+		h.countUpstreamError(ctx, reason, err)
+	}
+	h.metrics.upstreamDuration.Record(ctx, time.Since(start).Seconds(), outcome)
 }
 
 type consensusLevel string
@@ -274,12 +413,12 @@ type consensusExtension struct {
 	Responses []responseGroup `json:"responses,omitempty"`
 }
 
-func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostResponse, contentType string) {
+func (h *Handler) composeResponse(ctx context.Context, w http.ResponseWriter, responses []hostResponse, contentType string) string {
 	groups := groupResponses(responses)
 	if len(groups) == 0 {
 		h.logger.Error("all host queries failed", zap.Int("hosts", len(responses)))
 		h.writeError(w, http.StatusBadGateway, "no successful host responses", contentType)
-		return
+		return resultUpstreamError
 	}
 
 	consensus := consensusFull
@@ -292,6 +431,7 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 		h.logger.Warn("hosts returned divergent responses",
 			zap.String("consensus", string(consensus)), zap.Int("groups", len(groups)))
 	}
+	h.metrics.consensus.Add(context.WithoutCancel(ctx), 1, h.metrics.consensusLevels[consensus])
 
 	ext := consensusExtension{Consensus: consensus}
 	if consensus != consensusFull {
@@ -308,14 +448,14 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 	if err != nil {
 		h.logger.Error("failed to marshal consensus extension", zap.Error(err))
 		h.writeError(w, http.StatusInternalServerError, "internal error", contentType)
-		return
+		return resultError
 	}
 
 	var hostResp graphQLResponse
 	if err := json.Unmarshal([]byte(groups[0].body), &hostResp); err != nil {
 		h.logger.Error("failed to parse host response", zap.Error(err))
 		h.writeError(w, http.StatusBadGateway, "invalid host response", contentType)
-		return
+		return resultUpstreamError
 	}
 
 	resp := graphQLResponse{
@@ -328,7 +468,7 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 	if err != nil {
 		h.logger.Error("failed to marshal response", zap.Error(err))
 		h.writeError(w, http.StatusInternalServerError, "internal error", contentType)
-		return
+		return resultError
 	}
 
 	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
@@ -337,6 +477,7 @@ func (h *Handler) composeResponse(w http.ResponseWriter, responses []hostRespons
 	if err != nil {
 		h.logger.Warn("failed to write response", zap.Error(err))
 	}
+	return resultSuccess
 }
 
 type groupedResponse struct {

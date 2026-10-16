@@ -7,6 +7,8 @@ import (
 
 	"github.com/shinzonetwork/shinzo-network-gateway/endpoint"
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
 )
 
@@ -37,7 +39,51 @@ func New(logger *zap.Logger) *Router {
 		logger: logger.Named("router"),
 	}
 
+	meter := otel.Meter("github.com/shinzonetwork/shinzo-network-gateway/router")
+	_, err := meter.Int64ObservableGauge("shinzo.gateway.hosts.routable",
+		metric.WithDescription("Online hosts serving at least one collection."),
+		metric.WithUnit("{host}"),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			hosts, _ := r.routable()
+			o.Observe(int64(hosts))
+			return nil
+		}),
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+	_, err = meter.Int64ObservableGauge("shinzo.gateway.collections",
+		metric.WithDescription("Collections served by at least one online host."),
+		metric.WithUnit("{collection}"),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			_, collections := r.routable()
+			o.Observe(int64(collections))
+			return nil
+		}),
+	)
+	if err != nil {
+		otel.Handle(err)
+	}
+
 	return r
+}
+
+// routable returns the number of distinct hosts in all pools and the number of collections with at least one host.
+func (r *Router) routable() (hosts, collections int) {
+	r.mtx.RLock()
+	pools := make([]*pool, 0, len(r.pools))
+	for _, p := range r.pools {
+		pools = append(pools, p)
+	}
+	r.mtx.RUnlock()
+
+	seen := make(map[host.Host]struct{})
+	for _, p := range pools {
+		if p.addHostsTo(seen) > 0 {
+			collections++
+		}
+	}
+	return len(seen), collections
 }
 
 // SelectHosts finds the hosts that serve all the collections, and return random sample.
