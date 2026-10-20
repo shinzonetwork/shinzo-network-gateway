@@ -1,6 +1,6 @@
 module github.com/shinzonetwork/shinzo-network-gateway
 
-go 1.27.0
+go 1.27.3
 
 require (
 	github.com/goccy/go-json v0.11.2
