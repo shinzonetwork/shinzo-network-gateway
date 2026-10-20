@@ -20,9 +20,15 @@ import (
 	"github.com/shinzonetwork/shinzo-network-gateway/host"
 )
 
-// HostsSelector interface allows handler to get hosts for given collections.
+// HostsSelector selects the hosts to serve a query from the members of a pool.
 type HostsSelector interface {
-	SelectHosts(ctx context.Context, n int, collections []string) ([]host.Host, error)
+	SelectHosts(ctx context.Context, n int, collections []string, members []host.Host) ([]host.Host, error)
+}
+
+// PoolResolver resolves a signed pool address to the collection its view serves,
+// its member hosts, and whether it is active.
+type PoolResolver interface {
+	ResolvePool(poolAddress string) (host.PoolRoute, bool)
 }
 
 // Handler is a HTTP handler for "POST /graphql" endpoint.
@@ -30,6 +36,7 @@ type Handler struct {
 	validators []Validator
 	extractor  CollectionsExtractor
 	selector   HostsSelector
+	resolver   PoolResolver
 	client     *http.Client
 	logger     *zap.Logger
 
@@ -62,17 +69,18 @@ type hostResponse struct {
 }
 
 // extensions is a copy of Extensions from https://github.com/shinzonetwork/shinzo-querysig/blob/main/billing/
-// The entire dependency tree of shinozo-querysig is to huge to import.
+// The entire dependency tree of shinzo-querysig is too huge to import.
 type extensions struct {
 	RequestSignature string `json:"request_signature"`
 	Nonce            string `json:"nonce"`
 	QueryHash        string `json:"query_hash"`
 	RequestTimestamp uint64 `json:"request_timestamp"`
+	PoolAddress      string `json:"pool_address"`
 	Fanout           int    `json:"fanout"`
 }
 
 // NewHandler creates new Handler instance.
-func NewHandler(validators []Validator, extractor CollectionsExtractor, selector HostsSelector, defaultSampleSize int, logger *zap.Logger) *Handler {
+func NewHandler(validators []Validator, extractor CollectionsExtractor, selector HostsSelector, resolver PoolResolver, defaultSampleSize int, logger *zap.Logger) *Handler {
 	transport := &http.Transport{
 		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
 		ResponseHeaderTimeout: responseHeaderTimeout,
@@ -82,6 +90,7 @@ func NewHandler(validators []Validator, extractor CollectionsExtractor, selector
 		validators:        validators,
 		extractor:         extractor,
 		selector:          selector,
+		resolver:          resolver,
 		client:            &http.Client{Transport: transport},
 		logger:            logger.Named("handler"),
 		defaultSampleSize: defaultSampleSize,
@@ -140,16 +149,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := h.getFanout(gqlReq.Extensions)
+	ext, err := parseExtensions(gqlReq.Extensions)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, "invalid extensions", contentType)
 		return
 	}
-	h.logger.Debug("selecting hosts", zap.Strings("collections", collections), zap.Int("fanout", n))
-	hosts, err := h.selector.SelectHosts(r.Context(), n, collections)
+	n := h.fanout(ext)
+
+	hosts, err := h.selectHosts(r.Context(), n, collections, ext.PoolAddress)
 	if err != nil {
-		h.logger.Warn("failed to select hosts", zap.Strings("collections", collections), zap.Error(err))
-		h.writeError(w, http.StatusServiceUnavailable, err.Error(), contentType)
+		status := http.StatusServiceUnavailable
+		if errors.Is(err, ErrPoolViewMismatch) || errors.Is(err, ErrMissingPool) {
+			status = requestErrorStatus(contentType)
+		}
+		h.logger.Warn("failed to select hosts",
+			zap.Strings("collections", collections), zap.String("pool", ext.PoolAddress), zap.Error(err))
+		h.writeError(w, status, err.Error(), contentType)
 		return
 	}
 
@@ -158,19 +173,52 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.composeResponse(w, responses, contentType)
 }
 
-func (h *Handler) getFanout(ext json.RawMessage) (int, error) {
-	fanout := h.defaultSampleSize
-	if ext != nil {
-		var deserialized extensions
-		err := json.Unmarshal(ext, &deserialized)
-		if err != nil {
-			return 0, err
-		}
-		if deserialized.Fanout > 0 {
-			fanout = deserialized.Fanout
-		}
+// parseExtensions decodes the signed extensions envelope. A nil raw message
+// (request carried no extensions) yields the zero value, whose empty pool
+// address selectHosts then rejects as a missing signed pool.
+func parseExtensions(raw json.RawMessage) (extensions, error) {
+	var ext extensions
+	if raw == nil {
+		return ext, nil
 	}
-	return fanout, nil
+	if err := json.Unmarshal(raw, &ext); err != nil {
+		return extensions{}, err
+	}
+	return ext, nil
+}
+
+// fanout is the requested sample size: the client's fanout when set, else the default.
+func (h *Handler) fanout(ext extensions) int {
+	if ext.Fanout > 0 {
+		return ext.Fanout
+	}
+	return h.defaultSampleSize
+}
+
+// selectHosts resolves the query's signed pool and returns the hosts to fan out
+// to. The pool must be active and its view must be the collection the query
+// targets; the fan-out is then restricted to the pool's members. A query with no
+// signed pool address is rejected, since every query must name the pool it bills
+// to.
+func (h *Handler) selectHosts(ctx context.Context, n int, collections []string, poolAddress string) ([]host.Host, error) {
+	if poolAddress == "" {
+		return nil, ErrMissingPool
+	}
+
+	route, ok := h.resolver.ResolvePool(poolAddress)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrUnknownPool, poolAddress)
+	}
+	if !route.IsActive {
+		return nil, fmt.Errorf("%w: %s", ErrPoolInactive, poolAddress)
+	}
+	if len(collections) != 1 || collections[0] != route.Collection {
+		return nil, fmt.Errorf("%w: pool %s serves %q", ErrPoolViewMismatch, poolAddress, route.Collection)
+	}
+
+	h.logger.Debug("selecting hosts in pool",
+		zap.String("pool", poolAddress), zap.String("collection", route.Collection), zap.Int("fanout", n))
+	return h.selector.SelectHosts(ctx, n, collections, route.Members)
 }
 
 func (h *Handler) getHostsResponses(ctx context.Context, hosts []host.Host, body []byte, hostHeader, authHeader string) []hostResponse {
