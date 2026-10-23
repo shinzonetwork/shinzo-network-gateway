@@ -27,6 +27,19 @@ go run ./cmd/gateway
 
 The gateway accepts GraphQL-over-HTTP requests, parses the root collections, and forwards each request to an online host that serves them.
 
+## Metrics
+
+Metrics are off by default. To export them over OTLP (e.g. to Grafana Cloud), set:
+
+```shell
+OTEL_METRICS_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<region>.grafana.net/otlp
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20<base64 of instanceID:token>
+OTEL_RESOURCE_ATTRIBUTES=service.instance.id=<unique-node-id>
+```
+
+If metrics are enabled but misconfigured (e.g. a malformed `OTEL_RESOURCE_ATTRIBUTES` entry or an unknown exporter), the gateway refuses to start.
+
 ## GraphQL extensions
 
 The gateway is GraphQL-over-HTTP compliant and accepts the standard request body fields: `query`, `operationName`, `variables`, and `extensions`. Any `extensions` you send on a request are forwarded verbatim to upstream hosts; the gateway itself does not interpret them.
