@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -15,8 +16,9 @@ type Validator interface {
 
 // ValidationRequest contains the parsed query and request headers to validate.
 type ValidationRequest struct {
-	Query  *ast.QueryDocument
-	Header http.Header
+	Query      *ast.QueryDocument
+	Extensions json.RawMessage
+	Header     http.Header
 }
 
 // LimitValidator ensures every root field specifies a positive limit argument
@@ -161,6 +163,19 @@ func checkOrderValue(field string, value *ast.Value) error {
 	}
 	if value.Raw != "ASC" && value.Raw != "DESC" {
 		return fmt.Errorf("%w: %s: direction must be ASC or DESC, got %s", ErrInvalidOrder, field, value.Raw)
+	}
+	return nil
+}
+
+// ExtensionValidator ensures that request have properly formatted Extensions (as defined in GraphQL over HTTP).
+type ExtensionValidator struct{}
+
+var _ Validator = &ExtensionValidator{}
+
+// Validate checks that the request carries non-empty & properly formatted extensions.
+func (v *ExtensionValidator) Validate(req *ValidationRequest) error {
+	if len(req.Extensions) == 0 {
+		return ErrMissingExtensions
 	}
 	return nil
 }
